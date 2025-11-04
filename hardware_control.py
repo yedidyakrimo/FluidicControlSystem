@@ -3,7 +3,7 @@
 import serial  # Library for serial communication (e.g., with the pump)
 import nidaqmx  # Library for NI DAQ devices (e.g., NI USB-6002)
 import time
-import random  # For simulation purposes until a real device is connected
+import math  # For sin functions for realistic simulation
 
 # Try to import pyvisa, if not available, SMU will run in simulation mode
 try:
@@ -58,6 +58,10 @@ class HardwareController:
         elif smu_resource and not PYVISA_AVAILABLE:
             print("PyVISA not available. Running in simulation mode for SMU.")
             self.smu = None
+        
+        # Simulation state variables for realistic data generation
+        self.sim_start_time = time.time()
+        self.pump_setpoint_flow = 1.5  # Default flow rate setpoint
 
     # --- Pump Control Functions ---
     # This function sets the flow rate for the Vapourtec SF-10 pump.
@@ -70,6 +74,18 @@ class HardwareController:
             print(f"Set pump flow rate to {flow_rate_ml_min} ml/min.")
         else:
             print("Pump is not connected. Simulating flow rate setting.")
+            # Store previous setpoint for smooth transition
+            if hasattr(self, 'pump_setpoint_flow'):
+                self.previous_setpoint_flow = self.pump_setpoint_flow
+            else:
+                self.previous_setpoint_flow = flow_rate_ml_min
+            
+            # Store setpoint for realistic simulation
+            self.pump_setpoint_flow = flow_rate_ml_min
+            
+            # Record time of change for smooth transition
+            self.flow_change_time = time.time()
+            
             time.sleep(0.1)
             return True
 
@@ -84,10 +100,46 @@ class HardwareController:
             # For now, we'll return simulated data.
             return {"flow": 1.5, "pressure": 10.2, "rpm": 500}
         else:
-            # Simulation for a non-connected pump.
-            sim_flow = random.uniform(0.5, 2.0)
-            sim_pressure = random.uniform(5.0, 15.0)
-            sim_rpm = random.randint(300, 600)
+            # Realistic simulation: flow very close to setpoint with minimal variation
+            elapsed = time.time() - self.sim_start_time
+            
+            # Track when flow was last changed for smooth transition
+            if not hasattr(self, 'flow_change_time'):
+                self.flow_change_time = self.sim_start_time
+            
+            # Calculate time since last flow change
+            time_since_change = time.time() - self.flow_change_time
+            
+            # Very small sinusoidal variation (±0.5% instead of 2%)
+            flow_variation = 0.005 * self.pump_setpoint_flow * math.sin(2 * math.pi * elapsed / 25.0)
+            
+            # Add smooth transition when flow changes (exponential approach)
+            # If flow was just changed, gradually approach new setpoint
+            if time_since_change < 3.0:  # First 3 seconds after change
+                # Exponential approach: starts at old value, approaches new value
+                transition_factor = 1.0 - math.exp(-time_since_change / 0.8)  # Fast transition
+                # Use previous setpoint if available, otherwise use current
+                if hasattr(self, 'previous_setpoint_flow'):
+                    sim_flow = self.previous_setpoint_flow + (self.pump_setpoint_flow - self.previous_setpoint_flow) * transition_factor
+                else:
+                    sim_flow = self.pump_setpoint_flow
+            else:
+                # After transition period, flow is very close to setpoint
+                sim_flow = self.pump_setpoint_flow
+            
+            # Add minimal noise variation
+            sim_flow = sim_flow + flow_variation
+            
+            # Pressure correlates with flow (higher flow = higher pressure) with sin variation
+            base_pressure = 8.0 + (self.pump_setpoint_flow * 2.0)  # Base pressure scales with flow
+            pressure_variation = 1.5 * math.sin(2 * math.pi * elapsed / 12.0 + math.pi/4)
+            sim_pressure = base_pressure + pressure_variation
+            
+            # RPM correlates with flow
+            base_rpm = 300 + (self.pump_setpoint_flow * 100)
+            rpm_variation = 20 * math.sin(2 * math.pi * elapsed / 18.0)
+            sim_rpm = int(base_rpm + rpm_variation)
+            
             return {"flow": sim_flow, "pressure": sim_pressure, "rpm": sim_rpm}
 
     # This function turns the pump off.
@@ -115,9 +167,13 @@ class HardwareController:
                 print(f"Error reading from NI device: {e}")
                 return None
         else:
-            # Simulation for a non-connected NI device.
-            sim_pressure = random.uniform(0.5, 2.5)  # Simulating a pressure value.
-            return sim_pressure
+            # Realistic simulation using sin function
+            elapsed = time.time() - self.sim_start_time
+            # Base pressure with sinusoidal variation (period ~20 seconds)
+            base_pressure = 1.5
+            variation = 0.8 * math.sin(2 * math.pi * elapsed / 20.0)
+            sim_pressure = base_pressure + variation
+            return max(0.1, sim_pressure)  # Ensure positive value
 
     # This function will read the level from the level sensor connected to the NI device.
     def read_level_sensor(self):
@@ -127,9 +183,13 @@ class HardwareController:
             level = self.ni_task.read_from_level_channel()
             return level
         else:
-            # Simulating a level value.
-            sim_level = random.uniform(0.1, 0.9)  # Level as a fraction of tank height.
-            return sim_level
+            # Realistic simulation using sin function
+            elapsed = time.time() - self.sim_start_time
+            # Base level with slow sinusoidal variation (period ~60 seconds)
+            base_level = 0.5  # 50% full
+            variation = 0.3 * math.sin(2 * math.pi * elapsed / 60.0)
+            sim_level = base_level + variation
+            return max(0.05, min(0.95, sim_level))  # Clamp between 5% and 95%
 
     # --- Other Hardware Control Functions (Placeholders) ---
     def set_valves(self, valve_1_state, valve_2_state):
@@ -182,9 +242,13 @@ class HardwareController:
             print("Running in simulation mode - heating plate not connected")
 
     def read_temperature_sensor(self):
-        # Reads data from a temperature sensor.
-        sim_temp = random.uniform(20.0, 50.0)
-        return sim_temp
+        # Realistic simulation using sin function
+        elapsed = time.time() - self.sim_start_time
+        # Base temperature with slow sinusoidal variation (period ~45 seconds)
+        base_temp = 25.0  # Room temperature
+        variation = 5.0 * math.sin(2 * math.pi * elapsed / 45.0)
+        sim_temp = base_temp + variation
+        return max(20.0, min(50.0, sim_temp))  # Clamp between 20°C and 50°C
 
     def read_flow_sensor(self):
         """
@@ -203,9 +267,30 @@ class HardwareController:
                 print(f"Error reading flow sensor: {e}")
                 return None
         else:
-            # Simulation mode
-            sim_flow = random.uniform(0.5, 2.0)
-            return sim_flow
+            # Realistic simulation: flow very close to pump setpoint
+            elapsed = time.time() - self.sim_start_time
+            
+            # Track when flow was last changed for smooth transition
+            if not hasattr(self, 'flow_change_time'):
+                self.flow_change_time = self.sim_start_time
+            
+            time_since_change = time.time() - self.flow_change_time
+            
+            # Very small variation (±0.5%)
+            flow_variation = 0.005 * self.pump_setpoint_flow * math.sin(2 * math.pi * elapsed / 25.0)
+            
+            # Smooth transition when flow changes
+            if time_since_change < 3.0:
+                if hasattr(self, 'previous_setpoint_flow'):
+                    transition_factor = 1.0 - math.exp(-time_since_change / 0.8)
+                    sim_flow = self.previous_setpoint_flow + (self.pump_setpoint_flow - self.previous_setpoint_flow) * transition_factor
+                else:
+                    sim_flow = self.pump_setpoint_flow
+            else:
+                sim_flow = self.pump_setpoint_flow
+            
+            sim_flow = sim_flow + flow_variation
+            return max(0.1, sim_flow)  # Ensure positive value
 
     # --- SMU Control Functions ---
     def setup_smu_iv_sweep(self, start_v, end_v, step_v, current_limit=0.1):
@@ -276,8 +361,10 @@ class HardwareController:
                 return None
         else:
             # Simulation mode - generate realistic I-V curve data
-            sim_voltage = random.uniform(-2.0, 2.0)
-            sim_current = sim_voltage * 0.1 + random.uniform(-0.01, 0.01)  # Linear with noise
+            # For I-V measurements, we'll use a simple linear relationship
+            # The actual I-V sweep will be handled in run_iv_measurement
+            sim_voltage = 0.0
+            sim_current = 0.0
             return {"voltage": sim_voltage, "current": sim_current}
 
     def is_smu_sweep_complete(self):
