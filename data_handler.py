@@ -144,17 +144,25 @@ class DataHandler:
             return False
         
         try:
-            # Read the CSV file
-            df = pd.read_csv(self.file_path)
+            # Ensure file is closed before reading
+            if self.file:
+                self.file.flush()
             
-            # Check if file is empty
-            if df.empty:
+            # Read the CSV file, skipping comment lines that start with #
+            df = pd.read_csv(self.file_path, comment='#')
+            
+            # Check if file is empty or has no valid data
+            if df.empty or len(df) == 0:
                 print("CSV file is empty. No data to export.")
                 return False
             
             # Generate output path if not provided
             if output_path is None:
                 output_path = self.file_path.replace('.csv', '.xlsx')
+            
+            # Ensure output path has .xlsx extension
+            if not output_path.endswith('.xlsx'):
+                output_path += '.xlsx'
             
             # Create Excel writer with formatting
             with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
@@ -183,11 +191,11 @@ class DataHandler:
                     'Parameter': ['Total Data Points', 'Experiment Duration (s)', 'Average Flow Rate', 'Max Pressure', 'Min Temperature', 'Max Level'],
                     'Value': [
                         len(df),
-                        f"{df['time'].iloc[-1] - df['time'].iloc[0]:.2f}" if len(df) > 1 else "0",
-                        f"{df['pump_flow_read'].mean():.2f}" if 'pump_flow_read' in df.columns else "N/A",
-                        f"{df['pressure_read'].max():.2f}" if 'pressure_read' in df.columns else "N/A",
-                        f"{df['temp_read'].min():.2f}" if 'temp_read' in df.columns else "N/A",
-                        f"{df['level_read'].max():.2f}" if 'level_read' in df.columns else "N/A"
+                        f"{df['time'].iloc[-1] - df['time'].iloc[0]:.2f}" if len(df) > 1 and 'time' in df.columns else "0",
+                        f"{df['pump_flow_read'].mean():.2f}" if 'pump_flow_read' in df.columns and pd.notna(df['pump_flow_read']).any() else "N/A",
+                        f"{df['pressure_read'].max():.2f}" if 'pressure_read' in df.columns and pd.notna(df['pressure_read']).any() else "N/A",
+                        f"{df['temp_read'].min():.2f}" if 'temp_read' in df.columns and pd.notna(df['temp_read']).any() else "N/A",
+                        f"{df['level_read'].max():.2f}" if 'level_read' in df.columns and pd.notna(df['level_read']).any() else "N/A"
                     ]
                 }
                 
@@ -197,8 +205,19 @@ class DataHandler:
             print(f"Data exported to Excel: {output_path}")
             return True
             
+        except pd.errors.EmptyDataError:
+            print("CSV file contains no data rows (only comments or headers).")
+            return False
+        except pd.errors.ParserError as e:
+            print(f"Error parsing CSV file: {e}")
+            return False
+        except PermissionError:
+            print(f"Permission denied: Cannot write to {output_path}. File may be open in another program.")
+            return False
         except Exception as e:
             print(f"Error exporting to Excel: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def export_iv_to_excel(self, voltage_data, current_data, output_path=None):

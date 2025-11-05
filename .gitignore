@@ -34,7 +34,13 @@ ENV/
 # Data files
 data/
 *.csv
-*.txt
+# Allow README and requirements.txt
+!README.md
+!requirements.txt
+# Exclude temporary data files
+test_export.xlsx
+4
+44
 
 # OS
 .DS_Store
