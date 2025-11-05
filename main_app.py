@@ -1,7 +1,7 @@
 # main_app.py
 
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, PanedWindow, Frame
 from hardware_control import HardwareController
 from experiment_logic import ExperimentManager
 from data_handler import DataHandler
@@ -33,6 +33,7 @@ class FluidicControlApp(ctk.CTk):
         self.temp_x_data, self.temp_y_data = [], []
         self.level_x_data, self.level_y_data = [], []
         self.iv_x_data, self.iv_y_data = [], []
+        self.iv_time_x_data, self.iv_time_v_data, self.iv_time_i_data = [], [], []
         
         # Current flow rate
         self.current_flow_rate = 1.5
@@ -87,9 +88,18 @@ class FluidicControlApp(ctk.CTk):
     
     def create_main_tab(self):
         """Create Main tab widgets"""
-        # Left column
-        left_frame = ctk.CTkFrame(self.main_tab)
-        left_frame.pack(side='left', fill='both', padx=10, pady=10)
+        # Create PanedWindow for resizable panels
+        # Use tkinter PanedWindow with regular Frame wrapper for CustomTkinter compatibility
+        paned = PanedWindow(self.main_tab, orient='horizontal', sashwidth=8, sashrelief='raised', bg='#2b2b2b')
+        paned.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Left column container - regular tkinter Frame for PanedWindow compatibility
+        left_container = Frame(paned, bg='#1a1a1a')  # Match dark theme background
+        paned.add(left_container, minsize=250, width=400)  # Default width 400px, minimum 250px
+        
+        # Left column - Scrollable to see all options
+        left_frame = ctk.CTkScrollableFrame(left_container, width=400)
+        left_frame.pack(fill='both', expand=True)
         
         # Experiment Parameters
         exp_frame = ctk.CTkFrame(left_frame)
@@ -202,20 +212,20 @@ class FluidicControlApp(ctk.CTk):
         readings_grid = ctk.CTkFrame(readings_frame)
         readings_grid.pack(fill='x', padx=5, pady=5)
         
-        ctk.CTkLabel(readings_grid, text='Pressure:', width=100).grid(row=0, column=0, padx=5, pady=2)
-        self.pressure_label = ctk.CTkLabel(readings_grid, text='N/A', width=150)
+        ctk.CTkLabel(readings_grid, text='Pressure:', width=120).grid(row=0, column=0, padx=5, pady=2)
+        self.pressure_label = ctk.CTkLabel(readings_grid, text='N/A', width=180)
         self.pressure_label.grid(row=0, column=1, padx=5, pady=2)
         
-        ctk.CTkLabel(readings_grid, text='Temperature:', width=100).grid(row=1, column=0, padx=5, pady=2)
-        self.temp_label = ctk.CTkLabel(readings_grid, text='N/A', width=150)
+        ctk.CTkLabel(readings_grid, text='Temperature:', width=120).grid(row=1, column=0, padx=5, pady=2)
+        self.temp_label = ctk.CTkLabel(readings_grid, text='N/A', width=180)
         self.temp_label.grid(row=1, column=1, padx=5, pady=2)
         
-        ctk.CTkLabel(readings_grid, text='Flow:', width=100).grid(row=2, column=0, padx=5, pady=2)
-        self.flow_label = ctk.CTkLabel(readings_grid, text='N/A', width=150)
+        ctk.CTkLabel(readings_grid, text='Flow:', width=120).grid(row=2, column=0, padx=5, pady=2)
+        self.flow_label = ctk.CTkLabel(readings_grid, text='N/A', width=180)
         self.flow_label.grid(row=2, column=1, padx=5, pady=2)
         
-        ctk.CTkLabel(readings_grid, text='Level:', width=100).grid(row=3, column=0, padx=5, pady=2)
-        self.level_label = ctk.CTkLabel(readings_grid, text='N/A', width=150)
+        ctk.CTkLabel(readings_grid, text='Level:', width=120).grid(row=3, column=0, padx=5, pady=2)
+        self.level_label = ctk.CTkLabel(readings_grid, text='N/A', width=180)
         self.level_label.grid(row=3, column=1, padx=5, pady=2)
         
         # Real-time Statistics Panel
@@ -227,23 +237,23 @@ class FluidicControlApp(ctk.CTk):
         stats_grid.pack(fill='x', padx=5, pady=5)
         
         # Flow statistics
-        ctk.CTkLabel(stats_grid, text='Flow:', width=80, font=('Helvetica', 10, 'bold')).grid(row=0, column=0, padx=5, pady=2)
-        self.flow_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=250, font=('Helvetica', 9))
+        ctk.CTkLabel(stats_grid, text='Flow:', width=120, font=('Helvetica', 10, 'bold')).grid(row=0, column=0, padx=5, pady=2)
+        self.flow_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=260, font=('Helvetica', 9))
         self.flow_stats_label.grid(row=0, column=1, padx=5, pady=2)
         
         # Pressure statistics
-        ctk.CTkLabel(stats_grid, text='Pressure:', width=80, font=('Helvetica', 10, 'bold')).grid(row=1, column=0, padx=5, pady=2)
-        self.pressure_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=250, font=('Helvetica', 9))
+        ctk.CTkLabel(stats_grid, text='Pressure:', width=120, font=('Helvetica', 10, 'bold')).grid(row=1, column=0, padx=5, pady=2)
+        self.pressure_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=260, font=('Helvetica', 9))
         self.pressure_stats_label.grid(row=1, column=1, padx=5, pady=2)
         
         # Temperature statistics
-        ctk.CTkLabel(stats_grid, text='Temperature:', width=80, font=('Helvetica', 10, 'bold')).grid(row=2, column=0, padx=5, pady=2)
-        self.temp_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=250, font=('Helvetica', 9))
+        ctk.CTkLabel(stats_grid, text='Temperature:', width=120, font=('Helvetica', 10, 'bold')).grid(row=2, column=0, padx=5, pady=2)
+        self.temp_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=260, font=('Helvetica', 9))
         self.temp_stats_label.grid(row=2, column=1, padx=5, pady=2)
         
         # Level statistics
-        ctk.CTkLabel(stats_grid, text='Level:', width=80, font=('Helvetica', 10, 'bold')).grid(row=3, column=0, padx=5, pady=2)
-        self.level_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=250, font=('Helvetica', 9))
+        ctk.CTkLabel(stats_grid, text='Level:', width=120, font=('Helvetica', 10, 'bold')).grid(row=3, column=0, padx=5, pady=2)
+        self.level_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=260, font=('Helvetica', 9))
         self.level_stats_label.grid(row=3, column=1, padx=5, pady=2)
         
         # Recording Status
@@ -254,37 +264,41 @@ class FluidicControlApp(ctk.CTk):
         status_grid = ctk.CTkFrame(status_frame)
         status_grid.pack(fill='x', padx=5, pady=5)
         
-        ctk.CTkLabel(status_grid, text='Status:', width=80).grid(row=0, column=0, padx=5, pady=2)
-        self.recording_status_label = ctk.CTkLabel(status_grid, text='Ready', text_color='green', width=200)
+        ctk.CTkLabel(status_grid, text='Status:', width=120).grid(row=0, column=0, padx=5, pady=2)
+        self.recording_status_label = ctk.CTkLabel(status_grid, text='Ready', text_color='green', width=220)
         self.recording_status_label.grid(row=0, column=1, padx=5, pady=2)
         
-        ctk.CTkLabel(status_grid, text='File:', width=80).grid(row=1, column=0, padx=5, pady=2)
-        self.current_file_label = ctk.CTkLabel(status_grid, text='No file selected', width=200)
+        ctk.CTkLabel(status_grid, text='File:', width=120).grid(row=1, column=0, padx=5, pady=2)
+        self.current_file_label = ctk.CTkLabel(status_grid, text='No file selected', width=220)
         self.current_file_label.grid(row=1, column=1, padx=5, pady=2)
         
         # Status bar
         self.status_bar = ctk.CTkLabel(left_frame, text='', font=('Helvetica', 10))
         self.status_bar.pack(pady=5)
         
+        # Right column container - regular tkinter Frame for PanedWindow compatibility
+        right_container = Frame(paned, bg='#1a1a1a')  # Match dark theme background
+        paned.add(right_container, minsize=400)  # Minimum width 400px for graphs
+        
         # Right column - Multi-Panel Graphs
-        right_frame = ctk.CTkFrame(self.main_tab)
-        right_frame.pack(side='right', fill='both', expand=True, padx=10, pady=10)
+        right_frame = ctk.CTkFrame(right_container)
+        right_frame.pack(fill='both', expand=True)
         
         graph_control_frame = ctk.CTkFrame(right_frame)
         graph_control_frame.pack(fill='x', pady=5)
-        ctk.CTkLabel(graph_control_frame, text="Real-Time Monitoring - Multi-Panel View", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        ctk.CTkLabel(graph_control_frame, text="Real-Time Monitoring", font=('Helvetica', 14, 'bold')).pack(pady=5)
         
         # Graph mode toggle
         mode_frame = ctk.CTkFrame(graph_control_frame)
         mode_frame.pack(fill='x', padx=5, pady=5)
         ctk.CTkLabel(mode_frame, text='View Mode:', width=80).pack(side='left', padx=5)
-        self.graph_mode_var = ctk.StringVar(value="multi")
+        self.graph_mode_var = ctk.StringVar(value="single")
         ctk.CTkRadioButton(mode_frame, text="Multi-Panel (4 graphs)", variable=self.graph_mode_var, value="multi", command=self.on_graph_mode_change).pack(side='left', padx=5)
         ctk.CTkRadioButton(mode_frame, text="Single Graph (X-Y)", variable=self.graph_mode_var, value="single", command=self.on_graph_mode_change).pack(side='left', padx=5)
         
-        # Single graph controls (hidden initially)
+        # Single graph controls (shown initially)
         self.axis_frame = ctk.CTkFrame(graph_control_frame)
-        self.axis_frame.pack_forget()  # Hidden by default
+        self.axis_frame.pack(fill='x', padx=5, pady=5)  # Shown by default
         
         axis_label_frame = ctk.CTkFrame(self.axis_frame)
         axis_label_frame.pack(fill='x', padx=5, pady=2)
@@ -304,46 +318,52 @@ class FluidicControlApp(ctk.CTk):
         
         # Multi-panel graph frames container
         self.multi_graph_frame = ctk.CTkFrame(right_frame)
-        self.multi_graph_frame.pack(fill='both', expand=True, pady=5)
+        self.multi_graph_frame.pack_forget()  # Hidden by default
         
-        # Single graph frame (hidden initially)
+        # Single graph frame (shown initially)
         self.main_graph_frame = ctk.CTkFrame(right_frame)
-        self.main_graph_frame.pack_forget()
+        self.main_graph_frame.pack(fill='both', expand=True, pady=5)
     
     def create_iv_tab(self):
-        """Create IV tab widgets"""
-        # Quick Control
-        quick_frame = ctk.CTkFrame(self.iv_tab)
-        quick_frame.pack(fill='x', padx=10, pady=5)
-        ctk.CTkLabel(quick_frame, text="Quick Control", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        """Create IV tab widgets - similar layout to Main tab"""
+        # Create PanedWindow for resizable panels
+        paned = PanedWindow(self.iv_tab, orient='horizontal', sashwidth=8, sashrelief='raised', bg='#2b2b2b')
+        paned.pack(fill='both', expand=True, padx=5, pady=5)
         
-        btn_frame = ctk.CTkFrame(quick_frame)
-        btn_frame.pack(pady=5)
-        ctk.CTkButton(btn_frame, text='Direct setting', command=self.iv_direct_set, width=150).pack(side='left', padx=5)
-        ctk.CTkButton(btn_frame, text='Direct run', command=self.iv_direct_run, width=150).pack(side='left', padx=5)
+        # Left column container - regular tkinter Frame for PanedWindow compatibility
+        left_container = Frame(paned, bg='#1a1a1a')
+        paned.add(left_container, minsize=250, width=400)
         
-        # Parameters
-        params_frame = ctk.CTkFrame(self.iv_tab)
-        params_frame.pack(fill='x', padx=10, pady=5)
-        ctk.CTkLabel(params_frame, text="Parameters", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        # Left column - Scrollable to see all options
+        left_frame = ctk.CTkScrollableFrame(left_container, width=400)
+        left_frame.pack(fill='both', expand=True)
+        
+        # I-V Parameters
+        params_frame = ctk.CTkFrame(left_frame)
+        params_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(params_frame, text="I-V Parameters", font=('Helvetica', 14, 'bold')).pack(pady=5)
         
         params_grid = ctk.CTkFrame(params_frame)
         params_grid.pack(fill='x', padx=5, pady=5)
         
-        ctk.CTkLabel(params_grid, text='Range:', width=120).grid(row=0, column=0, padx=5, pady=2)
-        self.iv_range_entry = ctk.CTkEntry(params_grid, width=100)
+        ctk.CTkLabel(params_grid, text='Range (V):', width=120).grid(row=0, column=0, padx=5, pady=2)
+        self.iv_range_entry = ctk.CTkEntry(params_grid, width=150)
+        self.iv_range_entry.insert(0, '2.0')
         self.iv_range_entry.grid(row=0, column=1, padx=5, pady=2)
         
-        ctk.CTkLabel(params_grid, text='Step:', width=120).grid(row=1, column=0, padx=5, pady=2)
-        self.iv_step_entry = ctk.CTkEntry(params_grid, width=100)
+        ctk.CTkLabel(params_grid, text='Step (V):', width=120).grid(row=1, column=0, padx=5, pady=2)
+        self.iv_step_entry = ctk.CTkEntry(params_grid, width=150)
+        self.iv_step_entry.insert(0, '0.1')
         self.iv_step_entry.grid(row=1, column=1, padx=5, pady=2)
         
-        ctk.CTkLabel(params_grid, text='Time:', width=120).grid(row=2, column=0, padx=5, pady=2)
-        self.iv_time_entry = ctk.CTkEntry(params_grid, width=100)
+        ctk.CTkLabel(params_grid, text='Time delay (s):', width=120).grid(row=2, column=0, padx=5, pady=2)
+        self.iv_time_entry = ctk.CTkEntry(params_grid, width=150)
+        self.iv_time_entry.insert(0, '1.0')
         self.iv_time_entry.grid(row=2, column=1, padx=5, pady=2)
         
-        ctk.CTkLabel(params_grid, text='Flow rate:', width=120).grid(row=3, column=0, padx=5, pady=2)
-        self.iv_flow_entry = ctk.CTkEntry(params_grid, width=100)
+        ctk.CTkLabel(params_grid, text='Flow rate (ml/min):', width=120).grid(row=3, column=0, padx=5, pady=2)
+        self.iv_flow_entry = ctk.CTkEntry(params_grid, width=150)
+        self.iv_flow_entry.insert(0, '1.5')
         self.iv_flow_entry.grid(row=3, column=1, padx=5, pady=2)
         
         ctk.CTkLabel(params_grid, text='Valve setting:', width=120).grid(row=4, column=0, padx=5, pady=2)
@@ -353,24 +373,150 @@ class FluidicControlApp(ctk.CTk):
         ctk.CTkRadioButton(valve_btn_frame, text="Main", variable=self.iv_valve_var, value="main").pack(side='left', padx=5)
         ctk.CTkRadioButton(valve_btn_frame, text="Rinsing", variable=self.iv_valve_var, value="rinsing").pack(side='left', padx=5)
         
+        # Quick Control
+        quick_frame = ctk.CTkFrame(left_frame)
+        quick_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(quick_frame, text="Quick Control", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        btn_frame = ctk.CTkFrame(quick_frame)
+        btn_frame.pack(pady=5)
+        ctk.CTkButton(btn_frame, text='Direct setting', command=self.iv_direct_set, width=150, height=35).pack(pady=2)
+        ctk.CTkButton(btn_frame, text='Direct run', command=self.iv_direct_run, width=150, height=35, fg_color='green').pack(pady=2)
+        
         # Program Control
-        prog_frame = ctk.CTkFrame(self.iv_tab)
-        prog_frame.pack(fill='x', padx=10, pady=5)
+        prog_frame = ctk.CTkFrame(left_frame)
+        prog_frame.pack(fill='x', pady=5)
         ctk.CTkLabel(prog_frame, text="Program Control", font=('Helvetica', 14, 'bold')).pack(pady=5)
         
         prog_btn_frame = ctk.CTkFrame(prog_frame)
         prog_btn_frame.pack(pady=5)
-        ctk.CTkButton(prog_btn_frame, text='Choose program', command=self.iv_choose_program, width=150).pack(side='left', padx=5)
-        ctk.CTkButton(prog_btn_frame, text='Run program', command=self.iv_run_program, width=150).pack(side='left', padx=5)
+        ctk.CTkButton(prog_btn_frame, text='Choose program', command=self.iv_choose_program, width=150).pack(pady=2)
+        ctk.CTkButton(prog_btn_frame, text='Run program', command=self.iv_run_program, width=150).pack(pady=2)
         
-        # Save/Export buttons
-        save_frame = ctk.CTkFrame(self.iv_tab)
-        save_frame.pack(fill='x', padx=10, pady=5)
-        ctk.CTkButton(save_frame, text='Save to file', command=self.iv_save_file, width=150).pack(side='left', padx=5)
-        ctk.CTkButton(save_frame, text='Export to Excel', command=self.iv_export_excel, fg_color='blue', width=150).pack(side='left', padx=5)
+        # Current I-V Data
+        iv_readings_frame = ctk.CTkFrame(left_frame)
+        iv_readings_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(iv_readings_frame, text="Current I-V Data", font=('Helvetica', 14, 'bold')).pack(pady=5)
         
-        # IV Graph
-        self.iv_graph_frame = ctk.CTkFrame(self.iv_tab)
+        iv_readings_grid = ctk.CTkFrame(iv_readings_frame)
+        iv_readings_grid.pack(fill='x', padx=5, pady=5)
+        
+        ctk.CTkLabel(iv_readings_grid, text='Voltage:', width=120).grid(row=0, column=0, padx=5, pady=2)
+        self.iv_voltage_label = ctk.CTkLabel(iv_readings_grid, text='N/A', width=180)
+        self.iv_voltage_label.grid(row=0, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(iv_readings_grid, text='Current:', width=120).grid(row=1, column=0, padx=5, pady=2)
+        self.iv_current_label = ctk.CTkLabel(iv_readings_grid, text='N/A', width=180)
+        self.iv_current_label.grid(row=1, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(iv_readings_grid, text='Resistance:', width=120).grid(row=2, column=0, padx=5, pady=2)
+        self.iv_resistance_label = ctk.CTkLabel(iv_readings_grid, text='N/A', width=180)
+        self.iv_resistance_label.grid(row=2, column=1, padx=5, pady=2)
+        
+        # I-V Statistics
+        iv_stats_frame = ctk.CTkFrame(left_frame)
+        iv_stats_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(iv_stats_frame, text="I-V Statistics", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        iv_stats_grid = ctk.CTkFrame(iv_stats_frame)
+        iv_stats_grid.pack(fill='x', padx=5, pady=5)
+        
+        ctk.CTkLabel(iv_stats_grid, text='Data Points:', width=120, font=('Helvetica', 10, 'bold')).grid(row=0, column=0, padx=5, pady=2)
+        self.iv_points_label = ctk.CTkLabel(iv_stats_grid, text='0', width=180, font=('Helvetica', 9))
+        self.iv_points_label.grid(row=0, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(iv_stats_grid, text='V Range:', width=120, font=('Helvetica', 10, 'bold')).grid(row=1, column=0, padx=5, pady=2)
+        self.iv_vrange_label = ctk.CTkLabel(iv_stats_grid, text='N/A', width=180, font=('Helvetica', 9))
+        self.iv_vrange_label.grid(row=1, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(iv_stats_grid, text='I Range:', width=120, font=('Helvetica', 10, 'bold')).grid(row=2, column=0, padx=5, pady=2)
+        self.iv_irange_label = ctk.CTkLabel(iv_stats_grid, text='N/A', width=180, font=('Helvetica', 9))
+        self.iv_irange_label.grid(row=2, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(iv_stats_grid, text='Max R:', width=120, font=('Helvetica', 10, 'bold')).grid(row=3, column=0, padx=5, pady=2)
+        self.iv_maxr_label = ctk.CTkLabel(iv_stats_grid, text='N/A', width=180, font=('Helvetica', 9))
+        self.iv_maxr_label.grid(row=3, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(iv_stats_grid, text='Min R:', width=120, font=('Helvetica', 10, 'bold')).grid(row=4, column=0, padx=5, pady=2)
+        self.iv_minr_label = ctk.CTkLabel(iv_stats_grid, text='N/A', width=180, font=('Helvetica', 9))
+        self.iv_minr_label.grid(row=4, column=1, padx=5, pady=2)
+        
+        # Measurement Status
+        iv_status_frame = ctk.CTkFrame(left_frame)
+        iv_status_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(iv_status_frame, text="Measurement Status", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        iv_status_grid = ctk.CTkFrame(iv_status_frame)
+        iv_status_grid.pack(fill='x', padx=5, pady=5)
+        
+        ctk.CTkLabel(iv_status_grid, text='Status:', width=120).grid(row=0, column=0, padx=5, pady=2)
+        self.iv_status_label = ctk.CTkLabel(iv_status_grid, text='Ready', text_color='green', width=220)
+        self.iv_status_label.grid(row=0, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(iv_status_grid, text='File:', width=120).grid(row=1, column=0, padx=5, pady=2)
+        self.iv_file_label = ctk.CTkLabel(iv_status_grid, text='No file', width=220)
+        self.iv_file_label.grid(row=1, column=1, padx=5, pady=2)
+        
+        # Export Options
+        export_frame = ctk.CTkFrame(left_frame)
+        export_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(export_frame, text="Export", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        export_btn_frame = ctk.CTkFrame(export_frame)
+        export_btn_frame.pack(pady=5)
+        ctk.CTkButton(export_btn_frame, text='Save to file', command=self.iv_save_file, width=150).pack(pady=2)
+        
+        export_menu_frame = ctk.CTkFrame(export_frame)
+        export_menu_frame.pack(pady=2)
+        ctk.CTkLabel(export_menu_frame, text='Export:', width=80).pack(side='left', padx=5)
+        ctk.CTkButton(export_menu_frame, text='Excel', command=self.iv_export_excel, fg_color='blue', width=100).pack(side='left', padx=2)
+        ctk.CTkButton(export_menu_frame, text='PNG', command=self.iv_export_graph_png, fg_color='green', width=100).pack(side='left', padx=2)
+        ctk.CTkButton(export_menu_frame, text='PDF', command=self.iv_export_graph_pdf, fg_color='red', width=100).pack(side='left', padx=2)
+        
+        # Status bar
+        self.iv_status_bar = ctk.CTkLabel(left_frame, text='', font=('Helvetica', 10))
+        self.iv_status_bar.pack(pady=5)
+        
+        # Right column container - regular tkinter Frame for PanedWindow compatibility
+        right_container = Frame(paned, bg='#1a1a1a')
+        paned.add(right_container, minsize=400)
+        
+        # Right column - IV Graph
+        right_frame = ctk.CTkFrame(right_container)
+        right_frame.pack(fill='both', expand=True)
+        
+        graph_control_frame = ctk.CTkFrame(right_frame)
+        graph_control_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(graph_control_frame, text="I-V Characteristic", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        # Axis selection controls
+        axis_frame = ctk.CTkFrame(graph_control_frame)
+        axis_frame.pack(fill='x', padx=5, pady=5)
+        
+        axis_label_frame = ctk.CTkFrame(axis_frame)
+        axis_label_frame.pack(fill='x', padx=5, pady=2)
+        ctk.CTkLabel(axis_label_frame, text='X-Axis:', width=60).pack(side='left', padx=5)
+        self.iv_x_axis_combo = ctk.CTkComboBox(
+            axis_label_frame, 
+            values=['Voltage', 'Current', 'Time'],
+            width=150, 
+            command=self.on_iv_axis_change
+        )
+        self.iv_x_axis_combo.set('Voltage')
+        self.iv_x_axis_combo.pack(side='left', padx=5)
+        
+        ctk.CTkLabel(axis_label_frame, text='Y-Axis:', width=60).pack(side='left', padx=5)
+        self.iv_y_axis_combo = ctk.CTkComboBox(
+            axis_label_frame,
+            values=['Current', 'Voltage'],
+            width=150, 
+            command=self.on_iv_axis_change
+        )
+        self.iv_y_axis_combo.set('Current')
+        self.iv_y_axis_combo.pack(side='left', padx=5)
+        
+        # IV Graph frame
+        self.iv_graph_frame = ctk.CTkFrame(right_frame)
         self.iv_graph_frame.pack(fill='both', expand=True, padx=10, pady=5)
     
     def create_program_tab(self):
@@ -381,7 +527,60 @@ class FluidicControlApp(ctk.CTk):
         ctk.CTkLabel(editor_frame, text="Program Editor", font=('Helvetica', 14, 'bold')).pack(pady=5)
         
         self.program_editor = ctk.CTkTextbox(editor_frame, width=800, height=300)
-        self.program_editor.insert('1.0', '# Write your experiment program here\n# Example:\n# step1: flow=1.5, duration=60, temp=25, valve=main\n# step2: flow=2.0, duration=30, temp=30, valve=rinsing\n# step3: flow=0.5, duration=120, temp=20, valve=main')
+        default_program = '''# Write your experiment program here
+# Format: stepN: flow=X.X, duration=XX, temp=XX, valve=main/rinsing
+# 
+# ============================================
+# Example 1: Standard Test - Basic Flow Test
+# ============================================
+# step1: flow=1.5, duration=60, temp=25, valve=main
+# step2: flow=2.0, duration=30, temp=25, valve=main
+# step3: flow=0.5, duration=60, temp=25, valve=main
+#
+# ============================================
+# Example 2: Temperature Ramp - Gradual Temp Change
+# ============================================
+# step1: flow=1.0, duration=60, temp=20, valve=main
+# step2: flow=1.0, duration=60, temp=30, valve=main
+# step3: flow=1.0, duration=60, temp=40, valve=main
+# step4: flow=1.0, duration=60, temp=50, valve=main
+#
+# ============================================
+# Example 3: Flow Ramp - Gradual Flow Increase
+# ============================================
+# step1: flow=0.5, duration=60, temp=25, valve=main
+# step2: flow=1.0, duration=60, temp=25, valve=main
+# step3: flow=1.5, duration=60, temp=25, valve=main
+# step4: flow=2.0, duration=60, temp=25, valve=main
+# step5: flow=0.5, duration=60, temp=25, valve=main
+#
+# ============================================
+# Example 4: Valve Switching Test
+# ============================================
+# step1: flow=1.5, duration=60, temp=25, valve=main
+# step2: flow=1.5, duration=30, temp=25, valve=rinsing
+# step3: flow=1.5, duration=60, temp=25, valve=main
+# step4: flow=2.0, duration=30, temp=25, valve=rinsing
+#
+# ============================================
+# Example 5: Complex Multi-Step Experiment
+# ============================================
+# step1: flow=1.0, duration=120, temp=20, valve=main
+# step2: flow=1.5, duration=90, temp=25, valve=main
+# step3: flow=1.5, duration=60, temp=25, valve=rinsing
+# step4: flow=2.0, duration=60, temp=30, valve=main
+# step5: flow=0.5, duration=120, temp=20, valve=main
+#
+# ============================================
+# Instructions:
+# - Each step must have: flow, duration, and valve
+# - Temperature (temp) is optional, defaults to 25°C
+# - Flow rate in ml/min, duration in seconds
+# - Temperature in Celsius
+# - Valve: 'main' or 'rinsing'
+# ============================================
+'''
+        self.program_editor.insert('1.0', default_program)
         self.program_editor.pack(fill='both', expand=True, padx=5, pady=5)
         
         # Program Control
@@ -408,7 +607,7 @@ class FluidicControlApp(ctk.CTk):
         self.program_var = ctk.StringVar(value="Standard Test")
         self.program_optionmenu = ctk.CTkOptionMenu(
             library_content, 
-            values=["Standard Test", "Temperature Ramp", "Flow Ramp", "I-V Measurement"],
+            values=["Standard Test", "Temperature Ramp", "Flow Ramp", "Valve Switching Test", "Complex Multi-Step"],
             variable=self.program_var,
             width=300
         )
@@ -727,6 +926,30 @@ class FluidicControlApp(ctk.CTk):
                 elif update_type == 'UPDATE_IV_GRAPH':
                     x, y = data
                     self.update_iv_graph(x, y)
+                    self.update_iv_statistics()
+                    # Update current readings with last point
+                    if len(x) > 0 and len(y) > 0:
+                        last_v = x[-1]
+                        last_i = y[-1]
+                        resistance = last_v / last_i if last_i != 0 else float('inf')
+                        self.iv_voltage_label.configure(text=f"{last_v:.4f} V")
+                        self.iv_current_label.configure(text=f"{last_i:.6f} A")
+                        if resistance != float('inf'):
+                            self.iv_resistance_label.configure(text=f"{resistance:.2f} Ω")
+                        else:
+                            self.iv_resistance_label.configure(text="∞ Ω")
+                elif update_type == 'UPDATE_IV_STATUS':
+                    text, color = data
+                    self.iv_status_label.configure(text=text, text_color=color)
+                elif update_type == 'UPDATE_IV_FILE':
+                    self.iv_file_label.configure(text=data)
+                elif update_type == 'UPDATE_IV_STATUS_BAR':
+                    self.iv_status_bar.configure(text=data)
+                elif update_type == 'UPDATE_IV_TIME_GRAPH':
+                    # Update IV graph with time-based data
+                    x_axis_type = self.iv_x_axis_combo.get()
+                    y_axis_type = self.iv_y_axis_combo.get()
+                    self.plot_iv_xy_graph(x_axis_type, y_axis_type)
                 elif update_type == 'UPDATE_STATUS':
                     self.status_bar.configure(text=data)
                 elif update_type == 'UPDATE_RECORDING_STATUS':
@@ -967,18 +1190,23 @@ class FluidicControlApp(ctk.CTk):
             if self.data_handler.file_path and os.path.exists(self.data_handler.file_path):
                 filename = filedialog.asksaveasfilename(
                     defaultextension='.xlsx',
-                    filetypes=[('Excel Files', '*.xlsx')]
+                    filetypes=[('Excel Files', '*.xlsx')],
+                    title='Save Excel File As'
                 )
                 if filename:
+                    # Ensure filename has .xlsx extension if user didn't add it
+                    if not filename.endswith('.xlsx'):
+                        filename += '.xlsx'
                     success = self.data_handler.export_to_excel(filename)
                     if success:
-                        messagebox.showinfo('Export Complete', 'Excel file exported successfully!')
+                        messagebox.showinfo('Export Complete', f'Excel file exported successfully!\n{filename}')
                     else:
-                        messagebox.showerror('Error', 'Failed to export Excel file')
+                        messagebox.showerror('Error', 'Failed to export Excel file. Check console for details.')
+                # If user cancelled, filename will be empty string - that's fine
             else:
                 messagebox.showerror('Error', 'No experiment data to export. Run an experiment first.')
         except Exception as e:
-            messagebox.showerror('Error', f'Error exporting to Excel: {e}')
+            messagebox.showerror('Error', f'Error exporting to Excel: {e}\n\nPlease check:\n- File is not open in another program\n- You have write permissions\n- Disk has enough space')
     
     def export_graph_png(self):
         """Export current graph as PNG"""
@@ -1074,18 +1302,107 @@ class FluidicControlApp(ctk.CTk):
             if self.iv_x_data and self.iv_y_data:
                 filename = filedialog.asksaveasfilename(
                     defaultextension='.xlsx',
-                    filetypes=[('Excel Files', '*.xlsx')]
+                    filetypes=[('Excel Files', '*.xlsx')],
+                    title='Save I-V Excel File As'
                 )
                 if filename:
+                    if not filename.endswith('.xlsx'):
+                        filename += '.xlsx'
                     success = self.data_handler.export_iv_to_excel(self.iv_x_data, self.iv_y_data, filename)
                     if success:
-                        messagebox.showinfo('Export Complete', 'I-V Excel file exported successfully!')
+                        messagebox.showinfo('Export Complete', f'I-V Excel file exported successfully!\n{filename}')
                     else:
-                        messagebox.showerror('Error', 'Failed to export I-V Excel file')
+                        messagebox.showerror('Error', 'Failed to export I-V Excel file. Check console for details.')
             else:
                 messagebox.showerror('Error', 'No I-V data to export. Run an I-V measurement first.')
         except Exception as e:
             messagebox.showerror('Error', f'Error exporting I-V to Excel: {e}')
+    
+    def iv_export_graph_png(self):
+        """Export I-V graph as PNG"""
+        try:
+            filename = filedialog.asksaveasfilename(
+                defaultextension='.png',
+                filetypes=[('PNG Files', '*.png')],
+                title='Save I-V Graph as PNG'
+            )
+            if filename:
+                self.iv_fig.savefig(filename, dpi=300, bbox_inches='tight')
+                messagebox.showinfo('Export Complete', 'I-V graph exported as PNG successfully!')
+        except Exception as e:
+            messagebox.showerror('Error', f'Error exporting I-V graph: {e}')
+    
+    def iv_export_graph_pdf(self):
+        """Export I-V graph as PDF"""
+        try:
+            filename = filedialog.asksaveasfilename(
+                defaultextension='.pdf',
+                filetypes=[('PDF Files', '*.pdf')],
+                title='Save I-V Graph as PDF'
+            )
+            if filename:
+                self.iv_fig.savefig(filename, bbox_inches='tight')
+                messagebox.showinfo('Export Complete', 'I-V graph exported as PDF successfully!')
+        except Exception as e:
+            messagebox.showerror('Error', f'Error exporting I-V graph: {e}')
+    
+    def read_iv_time_data(self):
+        """קריאת מתח וזרם בזמן אמת מה-SMU"""
+        if self.hw_controller.smu:
+            try:
+                # קריאת נתונים מה-SMU
+                smu_data = self.hw_controller.read_smu_data()
+                if smu_data:
+                    return smu_data['voltage'], smu_data['current']
+                return None, None
+            except Exception as e:
+                print(f"Error reading I-V: {e}")
+                return None, None
+        else:
+            # סימולציה - לא מודדים בזמן אמת במצב סימולציה
+            # רק במהלך מדידת I-V רגילה
+            return None, None
+    
+    def update_iv_statistics(self):
+        """Calculate and update I-V statistics"""
+        try:
+            if len(self.iv_x_data) > 0 and len(self.iv_y_data) > 0:
+                # Data Points
+                self.iv_points_label.configure(text=str(len(self.iv_x_data)))
+                
+                # Voltage Range
+                v_min = min(self.iv_x_data)
+                v_max = max(self.iv_x_data)
+                self.iv_vrange_label.configure(text=f"{v_min:.3f} to {v_max:.3f} V")
+                
+                # Current Range
+                i_min = min(self.iv_y_data)
+                i_max = max(self.iv_y_data)
+                self.iv_irange_label.configure(text=f"{i_min:.6f} to {i_max:.6f} A")
+                
+                # Resistance (V/I)
+                resistances = []
+                for v, i in zip(self.iv_x_data, self.iv_y_data):
+                    if i != 0:
+                        resistances.append(v / i)
+                
+                if resistances:
+                    max_r = max(resistances)
+                    min_r = min(resistances)
+                    self.iv_maxr_label.configure(text=f"{max_r:.2f} Ω")
+                    self.iv_minr_label.configure(text=f"{min_r:.2f} Ω")
+                else:
+                    self.iv_maxr_label.configure(text="N/A")
+                    self.iv_minr_label.configure(text="N/A")
+            else:
+                # Reset to defaults
+                self.iv_points_label.configure(text='0')
+                self.iv_vrange_label.configure(text='N/A')
+                self.iv_irange_label.configure(text='N/A')
+                self.iv_maxr_label.configure(text='N/A')
+                self.iv_minr_label.configure(text='N/A')
+        except Exception as e:
+            print(f"Error updating I-V statistics: {e}")
     
     def load_program(self):
         """Load program from file"""
@@ -1123,10 +1440,11 @@ class FluidicControlApp(ctk.CTk):
             selected = self.program_var.get()
             if selected:
                 program_templates = {
-                    'Standard Test': 'step1: flow=1.5, duration=60, temp=25, valve=main\nstep2: flow=2.0, duration=30, temp=30, valve=rinsing',
-                    'Temperature Ramp': 'step1: flow=1.0, duration=30, temp=20, valve=main\nstep2: flow=1.0, duration=30, temp=30, valve=main\nstep3: flow=1.0, duration=30, temp=40, valve=main',
-                    'Flow Ramp': 'step1: flow=0.5, duration=60, temp=25, valve=main\nstep2: flow=1.0, duration=60, temp=25, valve=main\nstep3: flow=1.5, duration=60, temp=25, valve=main',
-                    'I-V Measurement': 'step1: flow=1.0, duration=10, temp=25, valve=main\n# I-V measurement will be performed automatically'
+                    'Standard Test': '# Standard Test - Basic Flow Test\nstep1: flow=1.5, duration=60, temp=25, valve=main\nstep2: flow=2.0, duration=30, temp=25, valve=main\nstep3: flow=0.5, duration=60, temp=25, valve=main',
+                    'Temperature Ramp': '# Temperature Ramp - Gradual Temperature Change\nstep1: flow=1.0, duration=60, temp=20, valve=main\nstep2: flow=1.0, duration=60, temp=30, valve=main\nstep3: flow=1.0, duration=60, temp=40, valve=main\nstep4: flow=1.0, duration=60, temp=50, valve=main',
+                    'Flow Ramp': '# Flow Ramp - Gradual Flow Increase\nstep1: flow=0.5, duration=60, temp=25, valve=main\nstep2: flow=1.0, duration=60, temp=25, valve=main\nstep3: flow=1.5, duration=60, temp=25, valve=main\nstep4: flow=2.0, duration=60, temp=25, valve=main\nstep5: flow=0.5, duration=60, temp=25, valve=main',
+                    'Valve Switching Test': '# Valve Switching Test\nstep1: flow=1.5, duration=60, temp=25, valve=main\nstep2: flow=1.5, duration=30, temp=25, valve=rinsing\nstep3: flow=1.5, duration=60, temp=25, valve=main\nstep4: flow=2.0, duration=30, temp=25, valve=rinsing',
+                    'Complex Multi-Step': '# Complex Multi-Step Experiment\nstep1: flow=1.0, duration=120, temp=20, valve=main\nstep2: flow=1.5, duration=90, temp=25, valve=main\nstep3: flow=1.5, duration=60, temp=25, valve=rinsing\nstep4: flow=2.0, duration=60, temp=30, valve=main\nstep5: flow=0.5, duration=120, temp=20, valve=main'
                 }
                 if selected in program_templates:
                     self.program_editor.delete('1.0', 'end')
@@ -1555,20 +1873,60 @@ class FluidicControlApp(ctk.CTk):
         self.main_fig.tight_layout(pad=2.0)
         self.main_canvas.draw()
     
-    def update_iv_graph(self, x_data, y_data):
-        """Update IV graph"""
+    def on_iv_axis_change(self, *args):
+        """Handle IV axis selection change"""
+        x_axis_type = self.iv_x_axis_combo.get()
+        y_axis_type = self.iv_y_axis_combo.get()
+        self.plot_iv_xy_graph(x_axis_type, y_axis_type)
+    
+    def plot_iv_xy_graph(self, x_axis_type, y_axis_type):
+        """Plot IV graph with selected axes"""
         self.iv_ax.clear()
         
-        # PyMeasure-style I-V styling
+        # בחר את הנתונים המתאימים לפי הצירים
+        if x_axis_type == 'Time' and y_axis_type == 'Voltage':
+            x_data = self.iv_time_x_data
+            y_data = self.iv_time_v_data
+            xlabel = "Time (s)"
+            ylabel = "Voltage (V)"
+            title = "Voltage vs Time"
+        elif x_axis_type == 'Time' and y_axis_type == 'Current':
+            x_data = self.iv_time_x_data
+            y_data = self.iv_time_i_data
+            xlabel = "Time (s)"
+            ylabel = "Current (A)"
+            title = "Current vs Time"
+        elif x_axis_type == 'Voltage' and y_axis_type == 'Current':
+            x_data = self.iv_x_data
+            y_data = self.iv_y_data
+            xlabel = "Voltage (V)"
+            ylabel = "Current (A)"
+            title = "I-V Characteristic"
+        elif x_axis_type == 'Current' and y_axis_type == 'Voltage':
+            x_data = self.iv_y_data
+            y_data = self.iv_x_data
+            xlabel = "Current (A)"
+            ylabel = "Voltage (V)"
+            title = "V-I Characteristic"
+        else:
+            # ברירת מחדל - I-V רגיל
+            x_data = self.iv_x_data
+            y_data = self.iv_y_data
+            xlabel = "Voltage (V)"
+            ylabel = "Current (A)"
+            title = "I-V Characteristic"
+        
+        # ציור הגרף
         if len(x_data) > 0 and len(y_data) > 0:
             self.iv_ax.plot(x_data, y_data, color='#C73E1D', linewidth=2.5, alpha=0.85)
         else:
             self.iv_ax.plot([], [], color='#C73E1D', linewidth=2.5)
         
+        # הגדרות צירים
         self.iv_ax.set_facecolor('white')
-        self.iv_ax.set_xlabel("Voltage (V)", color='black', fontsize=11)
-        self.iv_ax.set_ylabel("Current (A)", color='black', fontsize=11)
-        self.iv_ax.set_title("I-V Characteristic", color='black', fontsize=12, fontweight='bold', pad=12)
+        self.iv_ax.set_xlabel(xlabel, color='black', fontsize=11)
+        self.iv_ax.set_ylabel(ylabel, color='black', fontsize=11)
+        self.iv_ax.set_title(title, color='black', fontsize=12, fontweight='bold', pad=12)
         
         # Subtle grid
         self.iv_ax.grid(True, alpha=0.4, color='gray', linestyle='-', linewidth=0.5, which='both')
@@ -1580,7 +1938,27 @@ class FluidicControlApp(ctk.CTk):
             spine.set_color('black')
             spine.set_linewidth(1)
         
+        # Set axis limits if data exists
+        if len(x_data) > 0 and len(y_data) > 0:
+            x_margin = (max(x_data) - min(x_data)) * 0.05 if max(x_data) > min(x_data) else 1
+            y_margin = (max(y_data) - min(y_data)) * 0.1 if max(y_data) > min(y_data) else 1
+            self.iv_ax.set_xlim(min(x_data) - x_margin, max(x_data) + x_margin)
+            self.iv_ax.set_ylim(min(y_data) - y_margin, max(y_data) + y_margin)
+        
+        self.iv_fig.tight_layout(pad=2.0)
         self.iv_canvas.draw()
+    
+    def update_iv_graph(self, x_data, y_data):
+        """Update IV graph - now uses axis selection"""
+        # עדכן את הנתונים
+        if x_data and y_data:
+            self.iv_x_data = list(x_data)
+            self.iv_y_data = list(y_data)
+        
+        # עדכן את הגרף לפי הבחירה
+        x_axis_type = self.iv_x_axis_combo.get()
+        y_axis_type = self.iv_y_axis_combo.get()
+        self.plot_iv_xy_graph(x_axis_type, y_axis_type)
     
     # --- Thread Functions ---
     def parse_program(self, program_text):
@@ -1685,16 +2063,26 @@ class FluidicControlApp(ctk.CTk):
                     self.update_queue.put(('UPDATE_STATUS', f'Flow changed during experiment: {old_flow_rate:.2f} → {flow_rate:.2f} ml/min'))
                     print(f"Flow rate updated during experiment: {old_flow_rate:.2f} → {flow_rate:.2f} ml/min")
                 
-                pump_data = self.exp_manager.hw_controller.read_pump_data()
-                pressure = self.exp_manager.hw_controller.read_pressure_sensor()
-                temperature = self.exp_manager.hw_controller.read_temperature_sensor()
-                level = self.exp_manager.hw_controller.read_level_sensor()
-                
                 current_time = time.time()
                 remaining_time = duration - (current_time - start_time)
                 # Calculate elapsed time from experiment start
                 # experiment_start_time is already adjusted for resumed experiments
                 elapsed_time_from_start = current_time - experiment_start_time
+                
+                pump_data = self.exp_manager.hw_controller.read_pump_data()
+                pressure = self.exp_manager.hw_controller.read_pressure_sensor()
+                temperature = self.exp_manager.hw_controller.read_temperature_sensor()
+                level = self.exp_manager.hw_controller.read_level_sensor()
+                
+                # Read I-V data if SMU is available
+                voltage, current = self.read_iv_time_data()
+                if voltage is not None and current is not None:
+                    self.iv_time_x_data.append(elapsed_time_from_start)
+                    self.iv_time_v_data.append(voltage)
+                    self.iv_time_i_data.append(current)
+                    # Update IV graph if on IV tab
+                    if self.tabview.get() == "IV":
+                        self.update_queue.put(('UPDATE_IV_TIME_GRAPH', None))
                 
                 self.update_queue.put(('UPDATE_STATUS', f"Running: {remaining_time:.0f}s remaining, Flow={flow_rate}ml/min"))
                 
@@ -1716,6 +2104,11 @@ class FluidicControlApp(ctk.CTk):
                     "temp_read": temperature,
                     "level_read": level
                 }
+                # Add I-V data if available
+                if voltage is not None and current is not None:
+                    data_point["voltage_read"] = voltage
+                    data_point["current_read"] = current
+                
                 self.data_handler.append_data(data_point)
                 
                 # Update graphs via queue
@@ -1812,14 +2205,23 @@ class FluidicControlApp(ctk.CTk):
     
     def run_iv_measurement(self, range_val, step_val):
         """Run I-V measurement in separate thread"""
-        self.update_queue.put(('UPDATE_STATUS', "Starting I-V measurement..."))
+        self.update_queue.put(('UPDATE_IV_STATUS', ('Measuring...', 'orange')))
+        self.update_queue.put(('UPDATE_IV_STATUS_BAR', "Starting I-V measurement..."))
         
         # Clear previous data
         self.iv_x_data.clear()
         self.iv_y_data.clear()
+        self.iv_time_x_data.clear()
+        self.iv_time_v_data.clear()
+        self.iv_time_i_data.clear()
+        self.iv_measurement_start_time = time.time()
+        self.update_iv_statistics()
         
         # Create new data file
         self.data_handler.create_new_file()
+        if self.data_handler.file_path:
+            filename = os.path.basename(self.data_handler.file_path)
+            self.update_queue.put(('UPDATE_IV_FILE', filename))
         
         try:
             # Setup SMU
@@ -1828,6 +2230,7 @@ class FluidicControlApp(ctk.CTk):
             # Perform I-V sweep
             voltage_points = []
             current_points = []
+            total_points = int(range_val/step_val) * 2 + 1
             
             for v in range(int(-range_val/step_val), int(range_val/step_val) + 1):
                 voltage = v * step_val
@@ -1855,22 +2258,36 @@ class FluidicControlApp(ctk.CTk):
                 # Update graph
                 self.iv_x_data.append(voltage)
                 self.iv_y_data.append(current)
+                
+                # Save time-dependent data
+                elapsed_time = time.time() - self.iv_measurement_start_time
+                self.iv_time_x_data.append(elapsed_time)
+                self.iv_time_v_data.append(voltage)
+                self.iv_time_i_data.append(current)
+                
                 self.update_queue.put(('UPDATE_IV_GRAPH', (list(self.iv_x_data), list(self.iv_y_data))))
+                
+                # Update status with progress
+                progress = len(voltage_points)
+                self.update_queue.put(('UPDATE_IV_STATUS_BAR', f"Measuring: {progress}/{total_points} points..."))
                 
                 # Save data point
                 data_point = {
                     "time": len(voltage_points),
                     "voltage": voltage,
-                    "current": current
+                    "current": current,
+                    "elapsed_time": elapsed_time
                 }
                 self.data_handler.append_data(data_point)
                 
                 time.sleep(0.1)  # Small delay between measurements
             
-            self.update_queue.put(('UPDATE_STATUS', "I-V measurement completed"))
+            self.update_queue.put(('UPDATE_IV_STATUS', ('Completed', 'green')))
+            self.update_queue.put(('UPDATE_IV_STATUS_BAR', "I-V measurement completed"))
             
         except Exception as e:
-            self.update_queue.put(('UPDATE_STATUS', f"I-V measurement error: {e}"))
+            self.update_queue.put(('UPDATE_IV_STATUS', ('Error', 'red')))
+            self.update_queue.put(('UPDATE_IV_STATUS_BAR', f"I-V measurement error: {e}"))
             print(f"I-V measurement error: {e}")
         
         finally:
