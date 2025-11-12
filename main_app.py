@@ -46,10 +46,11 @@ class FluidicControlApp(ctk.CTk):
         self.update_queue = queue.Queue()
         
         # Initialize hardware components
+        # Use the specific Keithley resource string
         self.hw_controller = HardwareController(
             pump_port='COM3', 
             ni_device_name='Dev1', 
-            smu_resource='USB0::0x05E6::0x2450::0123456789::INSTR'
+            smu_resource='USB0::0x05E6::0x2450::04666218::INSTR'  # Your Keithley device
         )
         self.data_handler = DataHandler()
         self.exp_manager = ExperimentManager(self.hw_controller, self.data_handler)
@@ -59,6 +60,9 @@ class FluidicControlApp(ctk.CTk):
         
         # Initialize graphs
         self.setup_graphs()
+        
+        # Refresh SMU status on startup
+        self.after(500, self.refresh_smu_status)  # Delay to ensure widgets are created
         
         # Start periodic update check
         self.check_update_queue()
@@ -324,6 +328,123 @@ class FluidicControlApp(ctk.CTk):
         self.main_graph_frame = ctk.CTkFrame(right_frame)
         self.main_graph_frame.pack(fill='both', expand=True, pady=5)
     
+    def get_si_unit_label(self, value, unit_type='voltage'):
+        """
+        Get appropriate SI unit label based on value magnitude
+        unit_type: 'voltage' or 'current'
+        Returns: (unit_label, scale_factor)
+        """
+        abs_value = abs(value) if value != 0 else 1e-9
+        
+        # SI prefixes for voltage and current
+        if unit_type == 'voltage':
+            if abs_value >= 1e3:
+                return ('kV', 1e-3)  # kilovolts
+            elif abs_value >= 1:
+                return ('V', 1)  # volts
+            elif abs_value >= 1e-3:
+                return ('mV', 1e3)  # millivolts
+            elif abs_value >= 1e-6:
+                return ('µV', 1e6)  # microvolts
+            elif abs_value >= 1e-9:
+                return ('nV', 1e9)  # nanovolts
+            else:
+                return ('pV', 1e12)  # picovolts
+        else:  # current
+            if abs_value >= 1:
+                return ('A', 1)  # amperes
+            elif abs_value >= 1e-3:
+                return ('mA', 1e3)  # milliamperes
+            elif abs_value >= 1e-6:
+                return ('µA', 1e6)  # microamperes
+            elif abs_value >= 1e-9:
+                return ('nA', 1e9)  # nanoamperes
+            else:
+                return ('pA', 1e12)  # picoamperes
+
+    def get_axis_unit_label(self, data, unit_type='voltage'):
+        """
+        Get appropriate SI unit label based on data range
+        data: list of values
+        unit_type: 'voltage' or 'current'
+        Returns: (unit_label, scale_factor)
+        """
+        if not data or len(data) == 0:
+            return ('V', 1) if unit_type == 'voltage' else ('A', 1)
+        
+        # Find the maximum absolute value in the data
+        max_abs = max(abs(min(data)), abs(max(data))) if data else 1e-9
+        
+        return self.get_si_unit_label(max_abs, unit_type)
+    
+    def format_value_with_unit(self, value, unit_type='voltage'):
+        """
+        Format a single value with appropriate SI unit
+        value: the value to format
+        unit_type: 'voltage', 'current', or 'resistance'
+        Returns: formatted string like "1.5 mV" or "2.3 kΩ"
+        """
+        if value == float('inf') or value == float('-inf'):
+            return "∞"
+        
+        if unit_type == 'resistance':
+            abs_value = abs(value) if value != 0 else 1e-9
+            if abs_value >= 1e6:
+                return f"{value * 1e-6:.2f} MΩ"
+            elif abs_value >= 1e3:
+                return f"{value * 1e-3:.2f} kΩ"
+            elif abs_value >= 1:
+                return f"{value:.2f} Ω"
+            elif abs_value >= 1e-3:
+                return f"{value * 1e3:.2f} mΩ"
+            else:
+                return f"{value:.2e} Ω"
+        else:
+            unit, scale = self.get_si_unit_label(value, unit_type)
+            scaled_value = value * scale
+            # Determine decimal places based on magnitude
+            if abs(scaled_value) >= 100:
+                return f"{scaled_value:.1f} {unit}"
+            elif abs(scaled_value) >= 10:
+                return f"{scaled_value:.2f} {unit}"
+            elif abs(scaled_value) >= 1:
+                return f"{scaled_value:.3f} {unit}"
+            else:
+                return f"{scaled_value:.4f} {unit}"
+    
+    def format_range_with_unit(self, min_val, max_val, unit_type='voltage'):
+        """
+        Format a range (min to max) with appropriate SI unit
+        Returns: formatted string like "1.5 to 2.3 mV"
+        """
+        # Use the larger absolute value to determine unit
+        max_abs = max(abs(min_val), abs(max_val)) if min_val != 0 or max_val != 0 else 1e-9
+        
+        if unit_type == 'resistance':
+            if max_abs >= 1e6:
+                return f"{min_val * 1e-6:.2f} to {max_val * 1e-6:.2f} MΩ"
+            elif max_abs >= 1e3:
+                return f"{min_val * 1e-3:.2f} to {max_val * 1e-3:.2f} kΩ"
+            elif max_abs >= 1:
+                return f"{min_val:.2f} to {max_val:.2f} Ω"
+            elif max_abs >= 1e-3:
+                return f"{min_val * 1e3:.2f} to {max_val * 1e3:.2f} mΩ"
+            else:
+                return f"{min_val:.2e} to {max_val:.2e} Ω"
+        else:
+            unit, scale = self.get_si_unit_label(max_abs, unit_type)
+            min_scaled = min_val * scale
+            max_scaled = max_val * scale
+            # Determine decimal places
+            if abs(max_scaled) >= 100:
+                return f"{min_scaled:.1f} to {max_scaled:.1f} {unit}"
+            elif abs(max_scaled) >= 10:
+                return f"{min_scaled:.2f} to {max_scaled:.2f} {unit}"
+            elif abs(max_scaled) >= 1:
+                return f"{min_scaled:.3f} to {max_scaled:.3f} {unit}"
+            else:
+                return f"{min_scaled:.4f} to {max_scaled:.4f} {unit}"
+    
     def create_iv_tab(self):
         """Create IV tab widgets - similar layout to Main tab"""
         # Create PanedWindow for resizable panels
@@ -338,6 +459,58 @@ class FluidicControlApp(ctk.CTk):
         left_frame = ctk.CTkScrollableFrame(left_container, width=400)
         left_frame.pack(fill='both', expand=True)
         
+        # SMU Connection Status
+        smu_status_frame = ctk.CTkFrame(left_frame)
+        smu_status_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(smu_status_frame, text="Keithley 2450 SMU Status", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        # Connection info
+        smu_info_frame = ctk.CTkFrame(smu_status_frame)
+        smu_info_frame.pack(fill='x', padx=5, pady=5)
+        
+        ctk.CTkLabel(smu_info_frame, text='Status:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+        self.smu_status_label = ctk.CTkLabel(smu_info_frame, text='Checking...', width=250, anchor='w')
+        self.smu_status_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
+        
+        ctk.CTkLabel(smu_info_frame, text='Device ID:', width=100).grid(row=1, column=0, padx=5, pady=2, sticky='w')
+        self.smu_idn_label = ctk.CTkLabel(smu_info_frame, text='N/A', width=250, anchor='w', wraplength=250)
+        self.smu_idn_label.grid(row=1, column=1, padx=5, pady=2, sticky='w')
+        
+        ctk.CTkLabel(smu_info_frame, text='Resource:', width=100).grid(row=2, column=0, padx=5, pady=2, sticky='w')
+        self.smu_resource_label = ctk.CTkLabel(smu_info_frame, text='N/A', width=250, anchor='w', wraplength=250)
+        self.smu_resource_label.grid(row=2, column=1, padx=5, pady=2, sticky='w')
+        
+        # Control buttons
+        smu_btn_frame = ctk.CTkFrame(smu_status_frame)
+        smu_btn_frame.pack(pady=5)
+        ctk.CTkButton(smu_btn_frame, text='🔍 Detect SMU', command=self.detect_smu, width=120, height=30).pack(side='left', padx=2)
+        ctk.CTkButton(smu_btn_frame, text='🔄 Refresh Status', command=self.refresh_smu_status, width=120, height=30).pack(side='left', padx=2)
+        ctk.CTkButton(smu_btn_frame, text='📋 List Devices', command=self.list_visa_devices, width=120, height=30).pack(side='left', padx=2)
+        
+        # Quick SMU Control
+        smu_control_frame = ctk.CTkFrame(left_frame)
+        smu_control_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(smu_control_frame, text="Quick SMU Control", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        smu_control_grid = ctk.CTkFrame(smu_control_frame)
+        smu_control_grid.pack(fill='x', padx=5, pady=5)
+        
+        ctk.CTkLabel(smu_control_grid, text='Set Voltage (V):', width=120).grid(row=0, column=0, padx=5, pady=2)
+        self.smu_voltage_entry = ctk.CTkEntry(smu_control_grid, width=100)
+        self.smu_voltage_entry.insert(0, '0.0')
+        self.smu_voltage_entry.grid(row=0, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(smu_control_grid, text='Current Limit (A):', width=120).grid(row=1, column=0, padx=5, pady=2)
+        self.smu_current_limit_entry = ctk.CTkEntry(smu_control_grid, width=100)
+        self.smu_current_limit_entry.insert(0, '0.1')
+        self.smu_current_limit_entry.grid(row=1, column=1, padx=5, pady=2)
+        
+        smu_control_btn_frame = ctk.CTkFrame(smu_control_frame)
+        smu_control_btn_frame.pack(pady=5)
+        ctk.CTkButton(smu_control_btn_frame, text='Set Voltage', command=self.set_smu_voltage_manual, width=100, height=30).pack(side='left', padx=2)
+        ctk.CTkButton(smu_control_btn_frame, text='Measure', command=self.measure_smu_manual, width=100, height=30).pack(side='left', padx=2)
+        ctk.CTkButton(smu_control_btn_frame, text='Output OFF', command=self.smu_output_off, width=100, height=30, fg_color='red').pack(side='left', padx=2)
+        
         # I-V Parameters
         params_frame = ctk.CTkFrame(left_frame)
         params_frame.pack(fill='x', pady=5)
@@ -346,30 +519,35 @@ class FluidicControlApp(ctk.CTk):
         params_grid = ctk.CTkFrame(params_frame)
         params_grid.pack(fill='x', padx=5, pady=5)
         
-        ctk.CTkLabel(params_grid, text='Range (V):', width=120).grid(row=0, column=0, padx=5, pady=2)
-        self.iv_range_entry = ctk.CTkEntry(params_grid, width=150)
-        self.iv_range_entry.insert(0, '2.0')
-        self.iv_range_entry.grid(row=0, column=1, padx=5, pady=2)
+        ctk.CTkLabel(params_grid, text='Start (V):', width=120).grid(row=0, column=0, padx=5, pady=2)
+        self.iv_start_entry = ctk.CTkEntry(params_grid, width=150)
+        self.iv_start_entry.insert(0, '-2.0')
+        self.iv_start_entry.grid(row=0, column=1, padx=5, pady=2)
         
-        ctk.CTkLabel(params_grid, text='Step (V):', width=120).grid(row=1, column=0, padx=5, pady=2)
+        ctk.CTkLabel(params_grid, text='Stop (V):', width=120).grid(row=1, column=0, padx=5, pady=2)
+        self.iv_stop_entry = ctk.CTkEntry(params_grid, width=150)
+        self.iv_stop_entry.insert(0, '2.0')
+        self.iv_stop_entry.grid(row=1, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(params_grid, text='Step (V):', width=120).grid(row=2, column=0, padx=5, pady=2)
         self.iv_step_entry = ctk.CTkEntry(params_grid, width=150)
         self.iv_step_entry.insert(0, '0.1')
-        self.iv_step_entry.grid(row=1, column=1, padx=5, pady=2)
+        self.iv_step_entry.grid(row=2, column=1, padx=5, pady=2)
         
-        ctk.CTkLabel(params_grid, text='Time delay (s):', width=120).grid(row=2, column=0, padx=5, pady=2)
+        ctk.CTkLabel(params_grid, text='Time delay (s):', width=120).grid(row=3, column=0, padx=5, pady=2)
         self.iv_time_entry = ctk.CTkEntry(params_grid, width=150)
         self.iv_time_entry.insert(0, '1.0')
-        self.iv_time_entry.grid(row=2, column=1, padx=5, pady=2)
+        self.iv_time_entry.grid(row=3, column=1, padx=5, pady=2)
         
-        ctk.CTkLabel(params_grid, text='Flow rate (ml/min):', width=120).grid(row=3, column=0, padx=5, pady=2)
+        ctk.CTkLabel(params_grid, text='Flow rate (ml/min):', width=120).grid(row=4, column=0, padx=5, pady=2)
         self.iv_flow_entry = ctk.CTkEntry(params_grid, width=150)
         self.iv_flow_entry.insert(0, '1.5')
-        self.iv_flow_entry.grid(row=3, column=1, padx=5, pady=2)
+        self.iv_flow_entry.grid(row=4, column=1, padx=5, pady=2)
         
-        ctk.CTkLabel(params_grid, text='Valve setting:', width=120).grid(row=4, column=0, padx=5, pady=2)
+        ctk.CTkLabel(params_grid, text='Valve setting:', width=120).grid(row=5, column=0, padx=5, pady=2)
         self.iv_valve_var = ctk.StringVar(value="main")
         valve_btn_frame = ctk.CTkFrame(params_grid)
-        valve_btn_frame.grid(row=4, column=1, padx=5, pady=2)
+        valve_btn_frame.grid(row=5, column=1, padx=5, pady=2)
         ctk.CTkRadioButton(valve_btn_frame, text="Main", variable=self.iv_valve_var, value="main").pack(side='left', padx=5)
         ctk.CTkRadioButton(valve_btn_frame, text="Rinsing", variable=self.iv_valve_var, value="rinsing").pack(side='left', padx=5)
         
@@ -932,12 +1110,12 @@ class FluidicControlApp(ctk.CTk):
                         last_v = x[-1]
                         last_i = y[-1]
                         resistance = last_v / last_i if last_i != 0 else float('inf')
-                        self.iv_voltage_label.configure(text=f"{last_v:.4f} V")
-                        self.iv_current_label.configure(text=f"{last_i:.6f} A")
+                        self.iv_voltage_label.configure(text=self.format_value_with_unit(last_v, 'voltage'))
+                        self.iv_current_label.configure(text=self.format_value_with_unit(last_i, 'current'))
                         if resistance != float('inf'):
-                            self.iv_resistance_label.configure(text=f"{resistance:.2f} Ω")
+                            self.iv_resistance_label.configure(text=self.format_value_with_unit(resistance, 'resistance'))
                         else:
-                            self.iv_resistance_label.configure(text="∞ Ω")
+                            self.iv_resistance_label.configure(text="∞")
                 elif update_type == 'UPDATE_IV_STATUS':
                     text, color = data
                     self.iv_status_label.configure(text=text, text_color=color)
@@ -1240,31 +1418,148 @@ class FluidicControlApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror('Error', f'Error exporting graph: {e}')
     
+    def detect_smu(self):
+        """Detect and connect to Keithley 2450 SMU automatically"""
+        try:
+            # Try to auto-detect SMU
+            detected_smu = self.hw_controller.auto_detect_smu()
+            if detected_smu:
+                # Update the hardware controller's SMU reference
+                if self.hw_controller.smu:
+                    try:
+                        self.hw_controller.smu.close()
+                    except:
+                        pass
+                self.hw_controller.smu = detected_smu
+                messagebox.showinfo('Success', f'Keithley 2450 SMU detected and connected!\nResource: {detected_smu.resource_name}')
+                self.refresh_smu_status()
+            else:
+                messagebox.showwarning('Not Found', 'Keithley 2450 SMU not found. Please check:\n1. Device is powered on\n2. USB cable is connected\n3. VISA drivers are installed')
+        except Exception as e:
+            messagebox.showerror('Error', f'Error detecting SMU: {e}')
+    
+    def refresh_smu_status(self):
+        """Refresh SMU connection status display"""
+        try:
+            smu_info = self.hw_controller.get_smu_info()
+            if smu_info.get('connected', False):
+                self.smu_status_label.configure(text='✓ Connected', text_color='green')
+                self.smu_idn_label.configure(text=smu_info.get('idn', 'N/A'))
+                self.smu_resource_label.configure(text=smu_info.get('resource', 'N/A'))
+            else:
+                self.smu_status_label.configure(text='✗ Not Connected', text_color='red')
+                self.smu_idn_label.configure(text='N/A')
+                self.smu_resource_label.configure(text='N/A')
+        except Exception as e:
+            self.smu_status_label.configure(text=f'Error: {str(e)[:30]}', text_color='orange')
+    
+    def list_visa_devices(self):
+        """List all available VISA devices"""
+        try:
+            resources = self.hw_controller.list_visa_resources()
+            if resources:
+                device_list = "Available VISA Devices:\n\n"
+                for i, resource in enumerate(resources, 1):
+                    device_list += f"{i}. {resource}\n"
+                    # Try to get IDN if possible
+                    try:
+                        if self.hw_controller.rm:
+                            inst = self.hw_controller.rm.open_resource(resource)
+                            inst.timeout = 2000
+                            idn = inst.query("*IDN?")
+                            device_list += f"   IDN: {idn.strip()}\n"
+                            inst.close()
+                    except:
+                        device_list += "   (Could not query device)\n"
+                    device_list += "\n"
+                messagebox.showinfo('VISA Devices', device_list)
+            else:
+                messagebox.showinfo('VISA Devices', 'No VISA devices found.')
+        except Exception as e:
+            messagebox.showerror('Error', f'Error listing VISA devices: {e}')
+    
+    def set_smu_voltage_manual(self):
+        """Set SMU voltage manually"""
+        try:
+            voltage = float(self.smu_voltage_entry.get())
+            current_limit = float(self.smu_current_limit_entry.get())
+            
+            # Setup SMU first if needed
+            self.hw_controller.setup_smu_for_iv_measurement(current_limit)
+            
+            if self.hw_controller.set_smu_voltage(voltage, current_limit):
+                messagebox.showinfo('Success', f'Voltage set to {voltage}V\nCurrent limit: {current_limit}A')
+                # Update status
+                self.refresh_smu_status()
+            else:
+                messagebox.showerror('Error', 'Failed to set voltage. Check SMU connection.')
+        except ValueError:
+            messagebox.showerror('Error', 'Please enter valid numbers for voltage and current limit.')
+        except Exception as e:
+            messagebox.showerror('Error', f'Error setting voltage: {e}')
+    
+    def measure_smu_manual(self):
+        """Take a manual measurement from SMU"""
+        try:
+            measurement = self.hw_controller.measure_smu()
+            if measurement:
+                voltage = measurement.get('voltage', 0)
+                current = measurement.get('current', 0)
+                resistance = voltage / current if current != 0 else float('inf')
+                
+                # Update IV readings labels
+                self.iv_voltage_label.configure(text=self.format_value_with_unit(voltage, 'voltage'))
+                self.iv_current_label.configure(text=self.format_value_with_unit(current, 'current'))
+                if resistance != float('inf'):
+                    self.iv_resistance_label.configure(text=self.format_value_with_unit(resistance, 'resistance'))
+                else:
+                    self.iv_resistance_label.configure(text='∞')
+                
+                messagebox.showinfo('Measurement', 
+                    f'Voltage: {self.format_value_with_unit(voltage, "voltage")}\n'
+                    f'Current: {self.format_value_with_unit(current, "current")}\n'
+                    f'Resistance: {self.format_value_with_unit(resistance, "resistance") if resistance != float("inf") else "∞"}')
+            else:
+                messagebox.showerror('Error', 'Failed to measure. Check SMU connection.')
+        except Exception as e:
+            messagebox.showerror('Error', f'Error measuring: {e}')
+    
+    def smu_output_off(self):
+        """Turn off SMU output"""
+        try:
+            self.hw_controller.stop_smu()
+            messagebox.showinfo('Success', 'SMU output turned OFF')
+            self.refresh_smu_status()
+        except Exception as e:
+            messagebox.showerror('Error', f'Error turning off output: {e}')
+    
     def iv_direct_set(self):
         """IV direct setting"""
         try:
-            range_val = float(self.iv_range_entry.get()) if self.iv_range_entry.get() else 2.0
+            start_val = float(self.iv_start_entry.get()) if self.iv_start_entry.get() else -2.0
+            stop_val = float(self.iv_stop_entry.get()) if self.iv_stop_entry.get() else 2.0
             step_val = float(self.iv_step_entry.get()) if self.iv_step_entry.get() else 0.1
             time_val = float(self.iv_time_entry.get()) if self.iv_time_entry.get() else 1.0
             flow_rate = float(self.iv_flow_entry.get()) if self.iv_flow_entry.get() else 1.5
             
-            self.hw_controller.setup_smu_iv_sweep(-range_val, range_val, step_val)
+            self.hw_controller.setup_smu_iv_sweep(start_val, stop_val, step_val)
             self.hw_controller.set_pump_flow_rate(flow_rate)
             valve_main = self.iv_valve_var.get() == 'main'
             self.hw_controller.set_valves(valve_main, not valve_main)
             
-            self.update_queue.put(('UPDATE_STATUS', f"I-V setup completed: Range={range_val}V, Step={step_val}V, Flow={flow_rate}ml/min"))
+            self.update_queue.put(('UPDATE_STATUS', f"I-V setup completed: Start={start_val}V, Stop={stop_val}V, Step={step_val}V, Flow={flow_rate}ml/min"))
         except ValueError:
             messagebox.showerror('Error', "Invalid input values. Please enter numbers.")
     
     def iv_direct_run(self):
         """IV direct run"""
         try:
-            range_val = float(self.iv_range_entry.get()) if self.iv_range_entry.get() else 2.0
+            start_val = float(self.iv_start_entry.get()) if self.iv_start_entry.get() else -2.0
+            stop_val = float(self.iv_stop_entry.get()) if self.iv_stop_entry.get() else 2.0
             step_val = float(self.iv_step_entry.get()) if self.iv_step_entry.get() else 0.1
             
             threading.Thread(target=self.run_iv_measurement,
-                           args=(range_val, step_val),
+                           args=(start_val, stop_val, step_val),
                            daemon=True).start()
         except ValueError:
             messagebox.showerror('Error', "Invalid input values. Please enter numbers.")
@@ -1373,12 +1668,12 @@ class FluidicControlApp(ctk.CTk):
                 # Voltage Range
                 v_min = min(self.iv_x_data)
                 v_max = max(self.iv_x_data)
-                self.iv_vrange_label.configure(text=f"{v_min:.3f} to {v_max:.3f} V")
+                self.iv_vrange_label.configure(text=self.format_range_with_unit(v_min, v_max, 'voltage'))
                 
                 # Current Range
                 i_min = min(self.iv_y_data)
                 i_max = max(self.iv_y_data)
-                self.iv_irange_label.configure(text=f"{i_min:.6f} to {i_max:.6f} A")
+                self.iv_irange_label.configure(text=self.format_range_with_unit(i_min, i_max, 'current'))
                 
                 # Resistance (V/I)
                 resistances = []
@@ -1389,8 +1684,8 @@ class FluidicControlApp(ctk.CTk):
                 if resistances:
                     max_r = max(resistances)
                     min_r = min(resistances)
-                    self.iv_maxr_label.configure(text=f"{max_r:.2f} Ω")
-                    self.iv_minr_label.configure(text=f"{min_r:.2f} Ω")
+                    self.iv_maxr_label.configure(text=self.format_value_with_unit(max_r, 'resistance'))
+                    self.iv_minr_label.configure(text=self.format_value_with_unit(min_r, 'resistance'))
                 else:
                     self.iv_maxr_label.configure(text="N/A")
                     self.iv_minr_label.configure(text="N/A")
@@ -1880,45 +2175,83 @@ class FluidicControlApp(ctk.CTk):
         self.plot_iv_xy_graph(x_axis_type, y_axis_type)
     
     def plot_iv_xy_graph(self, x_axis_type, y_axis_type):
-        """Plot IV graph with selected axes"""
+        """Plot IV graph with selected axes and automatic unit scaling"""
         self.iv_ax.clear()
         
         # בחר את הנתונים המתאימים לפי הצירים
         if x_axis_type == 'Time' and y_axis_type == 'Voltage':
             x_data = self.iv_time_x_data
             y_data = self.iv_time_v_data
-            xlabel = "Time (s)"
-            ylabel = "Voltage (V)"
+            xlabel_base = "Time"
+            ylabel_base = "Voltage"
             title = "Voltage vs Time"
+            # Get appropriate unit for voltage
+            y_unit, y_scale = self.get_axis_unit_label(y_data, 'voltage')
+            ylabel = f"{ylabel_base} ({y_unit})"
+            xlabel = f"{xlabel_base} (s)"
+            # Scale y data
+            y_data_scaled = [y * y_scale for y in y_data] if y_data else []
+            x_data_scaled = x_data
         elif x_axis_type == 'Time' and y_axis_type == 'Current':
             x_data = self.iv_time_x_data
             y_data = self.iv_time_i_data
-            xlabel = "Time (s)"
-            ylabel = "Current (A)"
+            xlabel_base = "Time"
+            ylabel_base = "Current"
             title = "Current vs Time"
+            # Get appropriate unit for current
+            y_unit, y_scale = self.get_axis_unit_label(y_data, 'current')
+            ylabel = f"{ylabel_base} ({y_unit})"
+            xlabel = f"{xlabel_base} (s)"
+            # Scale y data
+            y_data_scaled = [y * y_scale for y in y_data] if y_data else []
+            x_data_scaled = x_data
         elif x_axis_type == 'Voltage' and y_axis_type == 'Current':
             x_data = self.iv_x_data
             y_data = self.iv_y_data
-            xlabel = "Voltage (V)"
-            ylabel = "Current (A)"
+            xlabel_base = "Voltage"
+            ylabel_base = "Current"
             title = "I-V Characteristic"
+            # Get appropriate units
+            x_unit, x_scale = self.get_axis_unit_label(x_data, 'voltage')
+            y_unit, y_scale = self.get_axis_unit_label(y_data, 'current')
+            xlabel = f"{xlabel_base} ({x_unit})"
+            ylabel = f"{ylabel_base} ({y_unit})"
+            # Scale data
+            x_data_scaled = [x * x_scale for x in x_data] if x_data else []
+            y_data_scaled = [y * y_scale for y in y_data] if y_data else []
         elif x_axis_type == 'Current' and y_axis_type == 'Voltage':
             x_data = self.iv_y_data
             y_data = self.iv_x_data
-            xlabel = "Current (A)"
-            ylabel = "Voltage (V)"
+            xlabel_base = "Current"
+            ylabel_base = "Voltage"
             title = "V-I Characteristic"
+            # Get appropriate units
+            x_unit, x_scale = self.get_axis_unit_label(x_data, 'current')
+            y_unit, y_scale = self.get_axis_unit_label(y_data, 'voltage')
+            xlabel = f"{xlabel_base} ({x_unit})"
+            ylabel = f"{ylabel_base} ({y_unit})"
+            # Scale data
+            x_data_scaled = [x * x_scale for x in x_data] if x_data else []
+            y_data_scaled = [y * y_scale for y in y_data] if y_data else []
         else:
             # ברירת מחדל - I-V רגיל
             x_data = self.iv_x_data
             y_data = self.iv_y_data
-            xlabel = "Voltage (V)"
-            ylabel = "Current (A)"
+            xlabel_base = "Voltage"
+            ylabel_base = "Current"
             title = "I-V Characteristic"
+            # Get appropriate units
+            x_unit, x_scale = self.get_axis_unit_label(x_data, 'voltage')
+            y_unit, y_scale = self.get_axis_unit_label(y_data, 'current')
+            xlabel = f"{xlabel_base} ({x_unit})"
+            ylabel = f"{ylabel_base} ({y_unit})"
+            # Scale data
+            x_data_scaled = [x * x_scale for x in x_data] if x_data else []
+            y_data_scaled = [y * y_scale for y in y_data] if y_data else []
         
-        # ציור הגרף
-        if len(x_data) > 0 and len(y_data) > 0:
-            self.iv_ax.plot(x_data, y_data, color='#C73E1D', linewidth=2.5, alpha=0.85)
+        # ציור הגרף עם הנתונים המסולקלים
+        if len(x_data_scaled) > 0 and len(y_data_scaled) > 0:
+            self.iv_ax.plot(x_data_scaled, y_data_scaled, color='#C73E1D', linewidth=2.5, alpha=0.85)
         else:
             self.iv_ax.plot([], [], color='#C73E1D', linewidth=2.5)
         
@@ -1939,11 +2272,11 @@ class FluidicControlApp(ctk.CTk):
             spine.set_linewidth(1)
         
         # Set axis limits if data exists
-        if len(x_data) > 0 and len(y_data) > 0:
-            x_margin = (max(x_data) - min(x_data)) * 0.05 if max(x_data) > min(x_data) else 1
-            y_margin = (max(y_data) - min(y_data)) * 0.1 if max(y_data) > min(y_data) else 1
-            self.iv_ax.set_xlim(min(x_data) - x_margin, max(x_data) + x_margin)
-            self.iv_ax.set_ylim(min(y_data) - y_margin, max(y_data) + y_margin)
+        if len(x_data_scaled) > 0 and len(y_data_scaled) > 0:
+            x_margin = (max(x_data_scaled) - min(x_data_scaled)) * 0.05 if max(x_data_scaled) > min(x_data_scaled) else 1
+            y_margin = (max(y_data_scaled) - min(y_data_scaled)) * 0.1 if max(y_data_scaled) > min(y_data_scaled) else 1
+            self.iv_ax.set_xlim(min(x_data_scaled) - x_margin, max(x_data_scaled) + x_margin)
+            self.iv_ax.set_ylim(min(y_data_scaled) - y_margin, max(y_data_scaled) + y_margin)
         
         self.iv_fig.tight_layout(pad=2.0)
         self.iv_canvas.draw()
@@ -2203,7 +2536,7 @@ class FluidicControlApp(ctk.CTk):
         self.data_handler.close_file()
         self.update_queue.put(('UPDATE_PROGRAM_STATUS', 'Program completed.'))
     
-    def run_iv_measurement(self, range_val, step_val):
+    def run_iv_measurement(self, start_val, stop_val, step_val):
         """Run I-V measurement in separate thread"""
         self.update_queue.put(('UPDATE_IV_STATUS', ('Measuring...', 'orange')))
         self.update_queue.put(('UPDATE_IV_STATUS_BAR', "Starting I-V measurement..."))
@@ -2224,36 +2557,73 @@ class FluidicControlApp(ctk.CTk):
             self.update_queue.put(('UPDATE_IV_FILE', filename))
         
         try:
-            # Setup SMU
-            self.hw_controller.setup_smu_iv_sweep(-range_val, range_val, step_val)
+            # Get current limit from entry if available, otherwise use default
+            try:
+                current_limit = float(self.smu_current_limit_entry.get()) if hasattr(self, 'smu_current_limit_entry') else 0.1
+            except:
+                current_limit = 0.1
             
-            # Perform I-V sweep
-            voltage_points = []
-            current_points = []
-            total_points = int(range_val/step_val) * 2 + 1
+            # Generate voltage points from start to stop
+            if start_val < stop_val:
+                voltage_points = []
+                v = start_val
+                while v <= stop_val:
+                    voltage_points.append(v)
+                    v += step_val
+            else:
+                voltage_points = []
+                v = start_val
+                while v >= stop_val:
+                    voltage_points.append(v)
+                    v -= step_val
             
-            for v in range(int(-range_val/step_val), int(range_val/step_val) + 1):
-                voltage = v * step_val
-                
-                # Set voltage and measure current
+            total_points = len(voltage_points)
+            
+            # Configure SMU once before the loop
+            if self.hw_controller.smu:
+                try:
+                    self.hw_controller.setup_smu_for_iv_measurement(current_limit)
+                except Exception as e:
+                    print(f"Error configuring SMU: {e}")
+                    self.update_queue.put(('UPDATE_IV_STATUS', ('Error', 'red')))
+                    self.update_queue.put(('UPDATE_IV_STATUS_BAR', f"Error configuring SMU: {e}"))
+                    return
+            else:
+                # SMU not connected - skip measurement
+                print("SMU not connected. Cannot perform measurement.")
+                self.update_queue.put(('UPDATE_IV_STATUS', ('Error', 'red')))
+                self.update_queue.put(('UPDATE_IV_STATUS_BAR', "SMU not connected"))
+                return
+            
+            # Perform I-V sweep using set_smu_voltage and measure_smu
+            for voltage in voltage_points:
+                # Set voltage using the proper function
                 if self.hw_controller.smu:
                     try:
-                        self.hw_controller.smu.write(f"SOUR:VOLT {voltage}")
-                        self.hw_controller.smu.write("INIT")
-                        current = float(self.hw_controller.smu.query("MEAS:CURR?"))
+                        # Only set voltage (don't reconfigure)
+                        self.hw_controller.set_smu_voltage(voltage, current_limit)
+                        # Wait for voltage to settle (use the delay from entry)
+                        try:
+                            delay = float(self.iv_time_entry.get()) if hasattr(self, 'iv_time_entry') else 0.1
+                        except:
+                            delay = 0.1
+                        time.sleep(delay)
+                        # Measure using measure_smu (which uses INIT)
+                        measurement = self.hw_controller.measure_smu()
+                        if measurement:
+                            current = measurement['current']
+                        else:
+                            print(f"Warning: Failed to measure at {voltage}V")
+                            continue
                     except Exception as e:
-                        print(f"Error in I-V measurement: {e}")
-                        # Realistic I-V: linear with small noise
-                        current = voltage * 0.1 + 0.005 * math.sin(voltage * 10) + 0.002 * math.sin(voltage * 20)
+                        print(f"Error in I-V measurement at {voltage}V: {e}")
+                        continue
                 else:
-                    # Simulation mode - realistic I-V curve
-                    # Linear relationship with small sinusoidal noise for realism
-                    base_current = voltage * 0.1
-                    noise = 0.005 * math.sin(voltage * 10) + 0.002 * math.sin(voltage * 20)
-                    current = base_current + noise
-                
-                voltage_points.append(voltage)
-                current_points.append(current)
+                    # SMU not connected - skip measurement
+                    print("SMU not connected. Cannot perform measurement.")
+                    self.update_queue.put(('UPDATE_IV_STATUS', ('Error', 'red')))
+                    self.update_queue.put(('UPDATE_IV_STATUS_BAR', "SMU not connected"))
+                    return
                 
                 # Update graph
                 self.iv_x_data.append(voltage)
@@ -2268,19 +2638,17 @@ class FluidicControlApp(ctk.CTk):
                 self.update_queue.put(('UPDATE_IV_GRAPH', (list(self.iv_x_data), list(self.iv_y_data))))
                 
                 # Update status with progress
-                progress = len(voltage_points)
+                progress = len(self.iv_x_data)
                 self.update_queue.put(('UPDATE_IV_STATUS_BAR', f"Measuring: {progress}/{total_points} points..."))
                 
                 # Save data point
                 data_point = {
-                    "time": len(voltage_points),
+                    "time": progress,
                     "voltage": voltage,
                     "current": current,
                     "elapsed_time": elapsed_time
                 }
                 self.data_handler.append_data(data_point)
-                
-                time.sleep(0.1)  # Small delay between measurements
             
             self.update_queue.put(('UPDATE_IV_STATUS', ('Completed', 'green')))
             self.update_queue.put(('UPDATE_IV_STATUS_BAR', "I-V measurement completed"))
@@ -2289,6 +2657,8 @@ class FluidicControlApp(ctk.CTk):
             self.update_queue.put(('UPDATE_IV_STATUS', ('Error', 'red')))
             self.update_queue.put(('UPDATE_IV_STATUS_BAR', f"I-V measurement error: {e}"))
             print(f"I-V measurement error: {e}")
+            import traceback
+            traceback.print_exc()
         
         finally:
             self.data_handler.close_file()

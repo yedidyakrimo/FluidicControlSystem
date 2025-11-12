@@ -6,12 +6,36 @@ import time
 import math  # For sin functions for realistic simulation
 
 # Try to import pyvisa, if not available, SMU will run in simulation mode
+PYVISA_AVAILABLE = False
+VISA_BACKEND = None
+
 try:
     import pyvisa  # Library for VISA communication (e.g., with Keithley SMU)  # noqa: F401
     PYVISA_AVAILABLE = True
+    
+    # Try to determine which VISA backend is available
+    try:
+        # Try NI-VISA first (best for USB devices like Keithley 2450)
+        rm_ni = pyvisa.ResourceManager()
+        VISA_BACKEND = '@ni'  # NI-VISA
+        print("Using NI-VISA backend (recommended for USB devices)")
+        rm_ni.close()
+    except:
+        try:
+            # Fall back to pyvisa-py
+            rm_py = pyvisa.ResourceManager('@py')
+            VISA_BACKEND = '@py'  # pyvisa-py
+            print("Using pyvisa-py backend (limited USB support)")
+            rm_py.close()
+        except:
+            VISA_BACKEND = None
+            print("Warning: VISA backend could not be initialized")
+            
 except ImportError:
     PYVISA_AVAILABLE = False
     print("PyVISA not available. SMU will run in simulation mode.")
+    print("To use Keithley 2450, install: pip install pyvisa")
+    print("For USB support, also install NI-VISA from: https://www.ni.com/en-il/support/downloads/drivers/download.ni-visa.html")
 
 
 # This class will handle all communication with the physical hardware components.
@@ -29,6 +53,9 @@ class HardwareController:
             print(f"Error connecting to Vapourtec pump: {e}")
             self.pump = None  # Set pump to None to indicate it's not connected.
 
+        # Store ni_device_name for later use
+        self.ni_device_name = ni_device_name
+        
         # We'll use a try-except block to handle NI-DAQmx driver errors.
         try:
             # Initialize connection to the NI USB device.
@@ -38,7 +65,7 @@ class HardwareController:
             # This is where we would configure the specific channels for our sensors (pressure, temp, flow).
             self.ni_task.ai_channels.add_ai_voltage_chan(f"{ni_device_name}/ai0")
             print(f"Connected to NI device: {ni_device_name}")
-        except nidaqmx.errors.DaqError as e:
+        except (nidaqmx.errors.DaqError, nidaqmx.errors.DaqNotFoundError, Exception) as e:
             # If the NI-DAQmx driver is not found, print an error message.
             print(f"Error connecting to NI device: {e}")
             print("Running in simulation mode for NI sensors.")
@@ -46,16 +73,38 @@ class HardwareController:
 
         # Initialize Keithley 2450 SMU
         self.smu = None
-        if smu_resource and PYVISA_AVAILABLE:
+        self.rm = None
+        if PYVISA_AVAILABLE:
             try:
+                # Use default ResourceManager (same as working code)
                 self.rm = pyvisa.ResourceManager()
-                self.smu = self.rm.open_resource(smu_resource)
-                print(f"Connected to Keithley 2450 SMU: {smu_resource}")
+                # If smu_resource is provided, try to connect to it
+                if smu_resource:
+                    try:
+                        print(f"Attempting to connect to: {smu_resource}...")
+                        self.smu = self.rm.open_resource(smu_resource)
+                        print(f"Resource opened successfully")
+                        # Test connection
+                        idn = self.smu.query("*IDN?")
+                        print(f"\n✅ Connection Successful!")
+                        print(f"Connected to Keithley 2450 SMU: {smu_resource}")
+                        print(f"Device ID: {idn.strip()}")
+                        print(f"SMU object created: {self.smu is not None}")
+                    except Exception as e:
+                        print(f"❌ Error connecting to specified SMU resource {smu_resource}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        print("Trying to auto-detect Keithley 2450...")
+                        self.smu = self.auto_detect_smu()
+                else:
+                    # Try to auto-detect
+                    print("No SMU resource specified. Trying to auto-detect Keithley 2450...")
+                    self.smu = self.auto_detect_smu()
             except Exception as e:
-                print(f"Error connecting to Keithley SMU: {e}")
+                print(f"Error initializing VISA ResourceManager: {e}")
                 print("Running in simulation mode for SMU.")
                 self.smu = None
-        elif smu_resource and not PYVISA_AVAILABLE:
+        else:
             print("PyVISA not available. Running in simulation mode for SMU.")
             self.smu = None
         
@@ -292,6 +341,170 @@ class HardwareController:
             sim_flow = sim_flow + flow_variation
             return max(0.1, sim_flow)  # Ensure positive value
 
+    # --- SMU Detection and Control Functions ---
+    def auto_detect_smu(self):
+        """
+        Auto-detect Keithley 2450 SMU from available VISA resources
+        Returns the SMU resource if found, None otherwise
+        """
+        if not self.rm:
+            return None
+        
+        try:
+            # List all available VISA resources
+            resources = self.rm.list_resources()
+            print(f"Found {len(resources)} VISA resource(s):")
+            
+            for resource in resources:
+                print(f"  - {resource}")
+                try:
+                    # Try to open the resource
+                    inst = self.rm.open_resource(resource)
+                    # Query device identification
+                    idn = inst.query("*IDN?")
+                    print(f"    IDN: {idn.strip()}")
+                    
+                    # Check if it's a Keithley 2450
+                    if "2450" in idn.upper() or "KEITHLEY" in idn.upper():
+                        print(f"    ✓ Found Keithley 2450 SMU at {resource}")
+                        return inst
+                    else:
+                        inst.close()
+                except Exception as e:
+                    print(f"    Could not query {resource}: {e}")
+                    continue
+            
+            print("No Keithley 2450 SMU found in available resources.")
+            return None
+            
+        except Exception as e:
+            print(f"Error during SMU auto-detection: {e}")
+            return None
+    
+    def list_visa_resources(self):
+        """
+        List all available VISA resources
+        Returns list of resource strings
+        """
+        if not self.rm:
+            return []
+        
+        try:
+            resources = self.rm.list_resources()
+            return list(resources)
+        except Exception as e:
+            print(f"Error listing VISA resources: {e}")
+            return []
+    
+    def get_smu_info(self):
+        """
+        Get information about the connected SMU
+        Returns dictionary with device information
+        """
+        if not self.smu:
+            print("get_smu_info: SMU is None")
+            return {"connected": False, "info": "SMU not connected"}
+        
+        try:
+            print(f"get_smu_info: Querying *IDN? from {self.smu.resource_name}")
+            idn = self.smu.query("*IDN?")
+            print(f"get_smu_info: Got IDN response: {idn.strip()}")
+            return {
+                "connected": True,
+                "idn": idn.strip(),
+                "resource": self.smu.resource_name
+            }
+        except Exception as e:
+            print(f"get_smu_info: Error querying SMU: {e}")
+            return {
+                "connected": False,
+                "error": str(e)
+            }
+    
+    def setup_smu_for_iv_measurement(self, current_limit=0.1):
+        """
+        Setup SMU for I-V measurement - configure once before sweep
+        current_limit: Current limit (A)
+        """
+        if not self.smu:
+            print("SMU not connected. Cannot setup SMU.")
+            return False
+        
+        try:
+            # Configure as voltage source
+            self.smu.write("SOUR:FUNC VOLT")
+            # Configure measurement function to current
+            self.smu.write('SENS:FUNC "CURR"')
+            # Set current protection/compliance
+            self.smu.write(f'SENS:CURR:PROT {current_limit}')
+            # Set NPLC for better accuracy (1 instead of 0.01 for less noise)
+            self.smu.write('CURR:NPLC 1')
+            # Set appropriate current range
+            self.smu.write(f'SENS:CURR:RANG {current_limit}')
+            # Turn output on
+            self.smu.write("OUTP ON")
+            print(f"SMU configured for I-V measurement (current limit: {current_limit}A)")
+            return True
+        except Exception as e:
+            print(f"Error setting up SMU: {e}")
+            return False
+    
+    def set_smu_voltage(self, voltage, current_limit=0.1):
+        """
+        Set SMU output voltage - only sets voltage, doesn't reconfigure
+        voltage: Voltage to set (V)
+        current_limit: Current limit (A) - not used here, kept for compatibility
+        """
+        if not self.smu:
+            print("SMU not connected. Cannot set voltage.")
+            return False
+        
+        try:
+            # Only set voltage, don't reconfigure everything
+            self.smu.write(f"SOUR:VOLT {voltage}")
+            return True
+        except Exception as e:
+            print(f"Error setting SMU voltage: {e}")
+            return False
+    
+    def measure_smu(self):
+        """
+        Measure voltage and current from SMU
+        Returns dictionary with voltage and current, or None on error
+        Uses INIT before measurement like the working code
+        """
+        if not self.smu:
+            return None
+        
+        try:
+            # Trigger measurement with INIT (like working code)
+            self.smu.write("INIT")
+            # Read current using MEAS:CURR?
+            current_string = self.smu.query('MEAS:CURR?')
+            current = float(current_string)
+            # Read voltage (the source voltage we set)
+            voltage_string = self.smu.query('SOUR:VOLT?')
+            voltage = float(voltage_string)
+            return {"voltage": voltage, "current": current}
+        except Exception as e:
+            print(f"Error measuring SMU: {e}")
+            return None
+    
+    def get_smu_output_state(self):
+        """
+        Get SMU output state (ON/OFF)
+        Returns True if output is ON, False otherwise
+        """
+        if not self.smu:
+            return False
+        
+        try:
+            state = self.smu.query("OUTP?")
+            return "1" in state or "ON" in state.upper()
+        except Exception as e:
+            print(f"Error reading SMU output state: {e}")
+            return False
+    
     # --- SMU Control Functions ---
     def setup_smu_iv_sweep(self, start_v, end_v, step_v, current_limit=0.1):
         """
