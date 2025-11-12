@@ -24,11 +24,31 @@ The system is built around the following key hardware components:
 * **Temperature Controller:** Precise temperature management
 
 ### Software Architecture
-The system consists of four main modules:
-* **`main_app.py`** - GUI application and main control loop
-* **`hardware_control.py`** - Hardware abstraction layer
-* **`data_handler.py`** - Data logging and CSV management
-* **`experiment_logic.py`** - Experiment management and safety checks
+The system is built with a modular architecture:
+
+**Core Modules:**
+* **`main_app.py`** - Main GUI application and control loop
+* **`main.py`** - Application entry point
+* **`data_handler.py`** - Data logging and CSV/Excel management
+
+**Hardware Modules** (`hardware/`):
+* **`hardware_controller.py`** - Unified hardware interface
+* **`pump/`** - Vapourtec pump control
+* **`smu/`** - Keithley 2450 SMU control with SCPI commands
+* **`ni_daq/`** - NI USB-6002 DAQ control
+* **`sensors/`** - Pressure, temperature, flow, and level sensors
+
+**Experiment Modules** (`experiments/`):
+* **`experiment_manager.py`** - Main experiment manager
+* **`experiment_types/`** - Time-dependent and I-V experiments
+* **`safety_checks.py`** - Safety monitoring
+
+**GUI Modules** (`gui/tabs/`):
+* **`main_tab.py`** - Main experiment control and monitoring
+* **`iv_tab.py`** - I-V measurement interface
+* **`program_tab.py`** - Program editor and execution
+* **`browser_tab.py`** - Experiment browser
+* **`scheduler_tab.py`** - Experiment scheduler
 
 ### Installation
 To run the software, ensure you have Python 3.7+ and pip installed.
@@ -53,6 +73,10 @@ To run the software, ensure you have Python 3.7+ and pip installed.
 
 #### Basic Usage
 Run the main application:
+```bash
+python main.py
+```
+or
 ```bash
 python main_app.py
 ```
@@ -103,12 +127,14 @@ All experiments are automatically saved to CSV files with timestamps in the `dat
 
 ### Requirements
 - Python 3.7+
-- PySimpleGUI
-- matplotlib
-- pyserial
-- nidaqmx
-- numpy
-- pyvisa (optional, for SMU)
+- customtkinter (GUI framework)
+- matplotlib (plotting)
+- pyserial (serial communication)
+- nidaqmx (NI DAQ support)
+- numpy (numerical operations)
+- pyvisa (VISA communication for SMU)
+- pandas (data handling)
+- openpyxl (Excel export)
 
 ### Contributing
 Contributions to this project are welcome. Please feel free to reach out with any suggestions or improvements.
