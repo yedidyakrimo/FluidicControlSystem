@@ -46,11 +46,11 @@ class FluidicControlApp(ctk.CTk):
         self.update_queue = queue.Queue()
         
         # Initialize hardware components
-        # Use the specific Keithley resource string
+        # Let the system auto-detect the Keithley device
         self.hw_controller = HardwareController(
             pump_port='COM3', 
             ni_device_name='Dev1', 
-            smu_resource='USB0::0x05E6::0x2450::04666218::INSTR'  # Your Keithley device
+            smu_resource=None  # Auto-detect Keithley 2450
         )
         self.data_handler = DataHandler()
         self.exp_manager = ExperimentManager(self.hw_controller, self.data_handler)

@@ -76,8 +76,27 @@ class HardwareController:
         self.rm = None
         if PYVISA_AVAILABLE:
             try:
-                # Use default ResourceManager (same as working code)
-                self.rm = pyvisa.ResourceManager()
+                # Try to initialize VISA ResourceManager
+                # First try default (NI-VISA) which is best for USB devices
+                try:
+                    self.rm = pyvisa.ResourceManager()
+                    print("Using default VISA backend (NI-VISA)")
+                except Exception as e1:
+                    # If default fails, try with explicit @ni
+                    try:
+                        self.rm = pyvisa.ResourceManager('@ni')
+                        print("Using NI-VISA backend (@ni)")
+                    except Exception as e2:
+                        # Fallback to pyvisa-py (limited USB support)
+                        try:
+                            self.rm = pyvisa.ResourceManager('@py')
+                            print("Using pyvisa-py backend (limited USB support)")
+                        except Exception as e3:
+                            print(f"Failed to initialize any VISA backend:")
+                            print(f"  Default: {e1}")
+                            print(f"  @ni: {e2}")
+                            print(f"  @py: {e3}")
+                            raise e3
                 # If smu_resource is provided, try to connect to it
                 if smu_resource:
                     try:
@@ -432,21 +451,30 @@ class HardwareController:
         
         try:
             # Configure as voltage source
+            print("Sending: SOUR:FUNC VOLT")
             self.smu.write("SOUR:FUNC VOLT")
             # Configure measurement function to current
+            print('Sending: SENS:FUNC "CURR"')
             self.smu.write('SENS:FUNC "CURR"')
-            # Set current protection/compliance
-            self.smu.write(f'SENS:CURR:PROT {current_limit}')
+            # Set current limit/compliance (using SOUR:VOLT:ILIM instead of SENS:CURR:PROT)
+            print(f'Sending: SOUR:VOLT:ILIM {current_limit}')
+            self.smu.write(f'SOUR:VOLT:ILIM {current_limit}')
             # Set NPLC for better accuracy (1 instead of 0.01 for less noise)
-            self.smu.write('CURR:NPLC 1')
+            # Fixed: NPLC must be under SENS, not directly under CURR
+            print('Sending: SENS:CURR:NPLC 1')
+            self.smu.write('SENS:CURR:NPLC 1')
             # Set appropriate current range
+            print(f'Sending: SENS:CURR:RANG {current_limit}')
             self.smu.write(f'SENS:CURR:RANG {current_limit}')
             # Turn output on
+            print("Sending: OUTP ON")
             self.smu.write("OUTP ON")
             print(f"SMU configured for I-V measurement (current limit: {current_limit}A)")
             return True
         except Exception as e:
             print(f"Error setting up SMU: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def set_smu_voltage(self, voltage, current_limit=0.1):
@@ -471,15 +499,13 @@ class HardwareController:
         """
         Measure voltage and current from SMU
         Returns dictionary with voltage and current, or None on error
-        Uses INIT before measurement like the working code
+        Uses MEAS:CURR? which performs measurement automatically (no INIT needed)
         """
         if not self.smu:
             return None
         
         try:
-            # Trigger measurement with INIT (like working code)
-            self.smu.write("INIT")
-            # Read current using MEAS:CURR?
+            # Read current using MEAS:CURR? (MEAS:CURR? performs measurement automatically, no INIT needed)
             current_string = self.smu.query('MEAS:CURR?')
             current = float(current_string)
             # Read voltage (the source voltage we set)
@@ -509,6 +535,7 @@ class HardwareController:
     def setup_smu_iv_sweep(self, start_v, end_v, step_v, current_limit=0.1):
         """
         Setup Keithley 2450 SMU for I-V sweep measurement
+        Note: We do manual sweep (not using built-in sweep mode) to avoid trigger model issues
         start_v: Starting voltage (V)
         end_v: Ending voltage (V)
         step_v: Voltage step (V)
@@ -516,40 +543,54 @@ class HardwareController:
         """
         if self.smu:
             try:
-                # Reset SMU
+                # Reset SMU (this resets everything including sweep mode)
+                print("Sending: *RST")
                 self.smu.write("*RST")
-                time.sleep(1)
+                time.sleep(0.5)
                 
                 # Configure source function to voltage
+                print("Sending: SOUR:FUNC VOLT")
                 self.smu.write("SOUR:FUNC VOLT")
                 
-                # Set voltage range
-                self.smu.write(f"SOUR:VOLT:RANG {max(abs(start_v), abs(end_v))}")
+                # Set voltage range (use max of start/end for safety)
+                voltage_range = max(abs(start_v), abs(end_v))
+                print(f"Sending: SOUR:VOLT:RANG {voltage_range}")
+                self.smu.write(f"SOUR:VOLT:RANG {voltage_range}")
                 
                 # Set current limit
+                print(f"Sending: SOUR:VOLT:ILIM {current_limit}")
                 self.smu.write(f"SOUR:VOLT:ILIM {current_limit}")
                 
                 # Configure measurement function to current
-                self.smu.write("SENS:FUNC 'CURR'")
+                print('Sending: SENS:FUNC "CURR"')
+                self.smu.write('SENS:FUNC "CURR"')
                 
                 # Set current range
+                print(f"Sending: SENS:CURR:RANG {current_limit}")
                 self.smu.write(f"SENS:CURR:RANG {current_limit}")
                 
-                # Configure sweep parameters
-                self.smu.write(f"SOUR:VOLT:STAR {start_v}")
-                self.smu.write(f"SOUR:VOLT:STOP {end_v}")
-                self.smu.write(f"SOUR:VOLT:STEP {step_v}")
+                # Note: Current limit already set above with SOUR:VOLT:ILIM
+                # SENS:CURR:PROT is not supported, using SOUR:VOLT:ILIM instead
                 
-                # Set sweep mode
-                self.smu.write("SOUR:VOLT:MODE SWE")
+                # Set NPLC for better accuracy
+                print("Sending: SENS:CURR:NPLC 1")
+                self.smu.write("SENS:CURR:NPLC 1")
                 
-                # Set measurement delay
-                self.smu.write("SENS:CURR:DC:APER 0.1")
+                # Set aperture time
+                print("Sending: SENS:CURR:APER 0.1")
+                self.smu.write("SENS:CURR:APER 0.1")
                 
-                print(f"SMU configured for I-V sweep: {start_v}V to {end_v}V, step {step_v}V")
+                # IMPORTANT: Do NOT enable sweep mode - we do manual sweep
+                # This avoids trigger model errors (Error 2710)
+                # The sweep will be done manually by setting voltage and measuring in a loop
+                
+                print(f"SMU configured for manual I-V sweep: {start_v}V to {end_v}V, step {step_v}V")
+                print("Note: Using manual sweep (not built-in sweep mode) to avoid trigger model issues")
                 
             except Exception as e:
                 print(f"Error configuring SMU: {e}")
+                import traceback
+                traceback.print_exc()
         else:
             print(f"SMU not connected. Simulating I-V setup: {start_v}V to {end_v}V, step {step_v}V")
 
@@ -560,12 +601,12 @@ class HardwareController:
         """
         if self.smu:
             try:
-                # Trigger measurement
-                self.smu.write("INIT")
-                
-                # Read voltage and current
-                voltage = float(self.smu.query("READ?"))
+                # Read voltage and current separately
+                # MEAS:CURR? performs measurement automatically (no INIT needed)
+                # READ? returns only the measured value (current if SENS:FUNC is CURR)
+                # So we need to read both separately
                 current = float(self.smu.query("MEAS:CURR?"))
+                voltage = float(self.smu.query("SOUR:VOLT?"))
                 
                 return {"voltage": voltage, "current": current}
                 

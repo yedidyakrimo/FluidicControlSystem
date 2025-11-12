@@ -109,18 +109,42 @@ class ExperimentManager:
             print("Starting I-V measurement...")
 
             try:
-                # The SMU will handle the sweeps, so we just need to set it up and read the results.
+                # Setup SMU for I-V measurement (manual sweep, not using built-in sweep mode)
                 self.hw_controller.setup_smu_iv_sweep(start_v, end_v, step_v)
-
-                # A loop to read the SMU data as it becomes available.
-                while self.is_running:
-                    smu_data = self.hw_controller.read_smu_data()
-                    if smu_data:
-                        self.data_handler.append_data(smu_data)
-                    # The loop would run until the SMU signals that the sweep is complete.
-                    if self.hw_controller.is_smu_sweep_complete():
+                
+                # Calculate voltage points for manual sweep
+                if start_v <= end_v:
+                    voltage_points = []
+                    v = start_v
+                    while v <= end_v:
+                        voltage_points.append(v)
+                        v += step_v
+                else:
+                    voltage_points = []
+                    v = start_v
+                    while v >= end_v:
+                        voltage_points.append(v)
+                        v -= step_v
+                
+                # Perform manual sweep - set voltage and measure for each point
+                for voltage in voltage_points:
+                    if not self.is_running:
                         break
-                    time.sleep(0.1)  # Small delay to prevent excessive CPU usage
+                    
+                    # Set voltage
+                    if self.hw_controller.smu:
+                        self.hw_controller.set_smu_voltage(voltage)
+                        time.sleep(0.1)  # Wait for voltage to settle
+                        # Measure
+                        smu_data = self.hw_controller.measure_smu()
+                        if smu_data:
+                            self.data_handler.append_data(smu_data)
+                    else:
+                        # Simulation mode
+                        smu_data = {"voltage": voltage, "current": voltage * 0.1}
+                        self.data_handler.append_data(smu_data)
+                    
+                    time.sleep(0.1)  # Small delay between measurements
 
             except Exception as e:
                 print(f"Error in I-V experiment: {e}")
