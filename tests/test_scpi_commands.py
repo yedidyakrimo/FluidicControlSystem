@@ -51,15 +51,14 @@ try:
         ("*RST", "Reset"),
         ("SOUR:FUNC VOLT", "Set source function to voltage"),
         ("SENS:FUNC \"CURR\"", "Set sense function to current"),
-        ("SENS:CURR:PROT 0.1", "Set current protection"),
-        ("SENS:CURR:NPLC 1", "Set NPLC (FIXED: was CURR:NPLC)"),
+        ("SOUR:VOLT:ILIM 0.1", "Set current limit (compliance) - FIXED: was SENS:CURR:PROT"),
+        ("SENS:CURR:NPLC 1", "Set NPLC"),
         ("SENS:CURR:RANG 0.1", "Set current range"),
         ("SOUR:VOLT 1.0", "Set voltage to 1V"),
         ("OUTP ON", "Turn output on"),
-        ("INIT", "Initiate measurement"),
-        ("READ?", "Read measurement"),
+        # Removed: INIT (not needed - MEAS:CURR? performs measurement automatically)
+        ("MEAS:CURR?", "Measure current (performs measurement automatically)"),
         ("SOUR:VOLT?", "Query voltage"),
-        ("MEAS:CURR?", "Measure current"),
         ("OUTP?", "Query output state"),
         ("OUTP OFF", "Turn output off"),
     ]
@@ -84,15 +83,13 @@ try:
         ("*RST", "Reset"),
         ("SOUR:FUNC VOLT", "Set source function"),
         ("SOUR:VOLT:RANG 10", "Set voltage range"),
-        ("SOUR:VOLT:ILIM 0.1", "Set current limit"),
+        ("SOUR:VOLT:ILIM 0.1", "Set current limit (compliance)"),
         ("SENS:FUNC \"CURR\"", "Set sense function"),
         ("SENS:CURR:RANG 0.1", "Set current range"),
-        ("SOUR:VOLT:STARt 0", "Set start voltage (FIXED: was STAR)"),
-        ("SOUR:VOLT:STOP 5", "Set stop voltage"),
-        ("SOUR:SWE:POIN 11", "Set sweep points"),
-        ("SOUR:SWE:SPAC LIN", "Set sweep spacing (FIXED: was SOUR:VOLT:MODE SWE)"),
-        ("SOUR:SWE:VOLT:STAT ON", "Enable voltage sweep (FIXED: was SOUR:VOLT:MODE SWE)"),
-        ("SENS:CURR:APER 0.1", "Set aperture (FIXED: was SENS:CURR:DC:APER)"),
+        ("SENS:CURR:NPLC 1", "Set NPLC"),
+        ("SENS:CURR:APER 0.1", "Set aperture"),
+        # Note: Using manual sweep mode (not built-in sweep) to avoid trigger model issues
+        # Removed: SOUR:VOLT:STARt, SOUR:VOLT:STOP, SOUR:SWE:POIN, SOUR:SWE:SPAC, SOUR:SWE:VOLT:STAT
     ]
     
     for cmd, desc in sweep_commands:

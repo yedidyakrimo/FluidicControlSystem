@@ -229,12 +229,14 @@ class Keithley2450(HardwareBase):
                 "error": str(e)
             }
     
-    def setup_for_iv_measurement(self, current_limit=0.1):
+    def setup_for_iv_measurement(self, current_limit=0.1, voltage_range=None):
         """
         Setup SMU for I-V measurement
         
         Args:
             current_limit: Current limit (A)
+            voltage_range: Voltage range (V). If None, will use default 20V range.
+                          Keithley 2450 supports: 0.2V, 2V, 20V, 200V
             
         Returns:
             True if successful, False otherwise
@@ -247,6 +249,24 @@ class Keithley2450(HardwareBase):
             # Configure as voltage source
             print("Sending: SOUR:FUNC VOLT")
             self.smu.write(self.scpi.set_source_voltage())
+            
+            # Set voltage range (important for allowing voltages > 2V)
+            if voltage_range is None:
+                # Default to 20V range to allow higher voltages
+                voltage_range = 20.0
+            else:
+                # Select the smallest range that covers the requested voltage
+                if voltage_range <= 0.2:
+                    voltage_range = 0.2
+                elif voltage_range <= 2.0:
+                    voltage_range = 2.0
+                elif voltage_range <= 20.0:
+                    voltage_range = 20.0
+                else:
+                    voltage_range = 200.0
+            
+            print(f"Sending: SOUR:VOLT:RANG {voltage_range}")
+            self.smu.write(self.scpi.set_voltage_range(voltage_range))
             
             # Configure measurement function to current
             print('Sending: SENS:FUNC "CURR"')
@@ -268,7 +288,7 @@ class Keithley2450(HardwareBase):
             print("Sending: OUTP ON")
             self.smu.write(self.scpi.output_on())
             
-            print(f"SMU configured for I-V measurement (current limit: {current_limit}A)")
+            print(f"SMU configured for I-V measurement (voltage range: {voltage_range}V, current limit: {current_limit}A)")
             return True
         except Exception as e:
             print(f"Error setting up SMU: {e}")
@@ -301,8 +321,21 @@ class Keithley2450(HardwareBase):
             self.smu.write(self.scpi.set_source_voltage())
             
             # Set voltage range
-            voltage_range = max(abs(start_v), abs(end_v))
-            print(f"Sending: SOUR:VOLT:RANG {voltage_range}")
+            # Keithley 2450 has specific ranges: 0.2V, 2V, 20V, 200V
+            # Select the appropriate range that covers the voltage sweep
+            max_voltage = max(abs(start_v), abs(end_v))
+            
+            # Select the smallest range that covers the maximum voltage
+            if max_voltage <= 0.2:
+                voltage_range = 0.2
+            elif max_voltage <= 2.0:
+                voltage_range = 2.0
+            elif max_voltage <= 20.0:
+                voltage_range = 20.0
+            else:
+                voltage_range = 200.0
+            
+            print(f"Sending: SOUR:VOLT:RANG {voltage_range} (max voltage: {max_voltage}V)")
             self.smu.write(self.scpi.set_voltage_range(voltage_range))
             
             # Set current limit

@@ -5,7 +5,7 @@ This class provides a unified interface to all hardware devices
 
 from .pump.vapourtec_pump import VapourtecPump
 from .smu.keithley_2450 import Keithley2450
-from .ni_daq.ni_usb6002 import NIUSB6002
+from .ni_daq.mcusb_1408fs import MCusb1408FS
 from .sensors.pressure_sensor import PressureSensor
 from .sensors.temperature_sensor import TemperatureSensor
 from .sensors.flow_sensor import FlowSensor
@@ -18,20 +18,20 @@ class HardwareController:
     Provides backward compatibility with the old hardware_control.py interface
     """
     
-    def __init__(self, pump_port='COM3', ni_device_name='Dev1', smu_resource=None):
+    def __init__(self, pump_port='COM3', mc_board_num=0, smu_resource=None):
         """
         Initialize hardware controller with all components
         
         Args:
             pump_port: Serial port for pump
-            ni_device_name: NI device name
+            mc_board_num: MCusb-1408FS-Plus board number (default 0)
             smu_resource: SMU VISA resource (None for auto-detect)
         """
         # Initialize pump
         self.pump = VapourtecPump(port=pump_port)
         
-        # Initialize NI DAQ
-        self.ni_daq = NIUSB6002(device_name=ni_device_name)
+        # Initialize MCusb-1408FS-Plus DAQ (replacing NI USB-6002)
+        self.ni_daq = MCusb1408FS(board_num=mc_board_num)
         
         # Initialize sensors (connected to NI DAQ)
         self.pressure_sensor = PressureSensor(ni_daq=self.ni_daq, channel='ai0')
@@ -43,8 +43,9 @@ class HardwareController:
         self.smu = Keithley2450(resource=smu_resource)
         
         # Store for backward compatibility
-        self.ni_device_name = ni_device_name
-        self.ni_task = self.ni_daq.ni_task  # For backward compatibility
+        self.ni_device_name = f"MCusb-1408FS-Plus (Board {mc_board_num})"
+        # For backward compatibility, create a dummy ni_task attribute
+        self.ni_task = None  # MCusb doesn't use ni_task like NI DAQ
     
     # --- Pump Control Functions (backward compatibility) ---
     def set_pump_flow_rate(self, flow_rate_ml_min):
@@ -80,10 +81,10 @@ class HardwareController:
         """Read level sensor"""
         return self.level_sensor.read()
     
-    # --- NI Device Control Functions (backward compatibility) ---
+    # --- DAQ Device Control Functions (backward compatibility) ---
     def set_valves(self, valve_1_state, valve_2_state):
         """
-        Control 3/2 valves through NI USB-6002 digital outputs
+        Control 3/2 valves through MCusb-1408FS-Plus digital outputs
         """
         if self.ni_daq and self.ni_daq.is_connected():
             try:
@@ -99,7 +100,7 @@ class HardwareController:
     
     def set_heating_plate_temp(self, temperature_celsius):
         """
-        Control heating plate temperature through NI USB-6002
+        Control heating plate temperature through MCusb-1408FS-Plus
         """
         if self.ni_daq and self.ni_daq.is_connected():
             try:
@@ -131,9 +132,9 @@ class HardwareController:
         """Get SMU information"""
         return self.smu.get_info()
     
-    def setup_smu_for_iv_measurement(self, current_limit=0.1):
+    def setup_smu_for_iv_measurement(self, current_limit=0.1, voltage_range=None):
         """Setup SMU for I-V measurement"""
-        return self.smu.setup_for_iv_measurement(current_limit)
+        return self.smu.setup_for_iv_measurement(current_limit, voltage_range)
     
     def set_smu_voltage(self, voltage, current_limit=0.1):
         """Set SMU voltage"""
@@ -163,4 +164,36 @@ class HardwareController:
     def stop_smu(self):
         """Stop SMU"""
         self.smu.stop()
+    
+    def cleanup(self):
+        """
+        Cleanup all hardware connections
+        Should be called when application is closing
+        """
+        print("Cleaning up hardware connections...")
+        
+        # Stop pump
+        try:
+            self.stop_pump()
+            if hasattr(self.pump, 'disconnect'):
+                self.pump.disconnect()
+        except Exception as e:
+            print(f"Error cleaning up pump: {e}")
+        
+        # Stop SMU
+        try:
+            self.stop_smu()
+            if hasattr(self.smu, 'disconnect'):
+                self.smu.disconnect()
+        except Exception as e:
+            print(f"Error cleaning up SMU: {e}")
+        
+        # Disconnect MCusb-1408FS-Plus DAQ
+        try:
+            if hasattr(self.ni_daq, 'disconnect'):
+                self.ni_daq.disconnect()
+        except Exception as e:
+            print(f"Error cleaning up MCusb-1408FS-Plus DAQ: {e}")
+        
+        print("Hardware cleanup completed.")
 

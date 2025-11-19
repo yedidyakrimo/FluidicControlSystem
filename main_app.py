@@ -29,11 +29,19 @@ class FluidicControlApp(ctk.CTk):
         # Queue for thread-safe GUI updates
         self.update_queue = queue.Queue()
         
+        # Flag to stop periodic callbacks
+        self.is_closing = False
+        self.check_update_job = None
+        self.sensor_update_job = None
+        self.smu_refresh_job = None
+        # Track all after() callbacks for cleanup
+        self.pending_callbacks = []
+        
         # Initialize hardware components
         # Let the system auto-detect the Keithley device
         self.hw_controller = HardwareController(
             pump_port='COM3', 
-            ni_device_name='Dev1', 
+            mc_board_num=0,  # MCusb-1408FS-Plus board number (default 0)
             smu_resource=None  # Auto-detect Keithley 2450
         )
         self.data_handler = DataHandler()
@@ -50,7 +58,12 @@ class FluidicControlApp(ctk.CTk):
         
         # Refresh SMU status on startup (if IV tab exists)
         if hasattr(self, 'iv_tab_instance'):
-            self.after(500, self.iv_tab_instance.refresh_smu_status)
+            self.smu_refresh_job = self.after(500, self.iv_tab_instance.refresh_smu_status)
+            if self.smu_refresh_job:
+                self.pending_callbacks.append(self.smu_refresh_job)
+        
+        # Set up window close handler
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
     
     def create_widgets(self):
         """Create all UI widgets"""
@@ -111,6 +124,8 @@ class FluidicControlApp(ctk.CTk):
     
     def check_update_queue(self):
         """Check for thread-safe GUI updates and route to appropriate tabs"""
+        if self.is_closing:
+            return
         try:
             while True:
                 update_type, data = self.update_queue.get_nowait()
@@ -173,6 +188,11 @@ class FluidicControlApp(ctk.CTk):
                             x_axis_type = self.iv_tab_instance.iv_x_axis_combo.get()
                             y_axis_type = self.iv_tab_instance.iv_y_axis_combo.get()
                             self.iv_tab_instance.plot_iv_xy_graph(x_axis_type, y_axis_type)
+                        elif update_type == 'UPDATE_MCUSB_CH0':
+                            # MCusb channel 0 reading update
+                            voltage = data
+                            self.iv_tab_instance.mcusb_ch0_label.configure(
+                                text=f'{voltage:.4f} V', text_color='green')
                 
                 elif update_type in ['UPDATE_STATUS', 'UPDATE_RECORDING_STATUS', 'UPDATE_FILE', 'UPDATE_READINGS']:
                     # Main tab status updates
@@ -199,11 +219,16 @@ class FluidicControlApp(ctk.CTk):
         except queue.Empty:
             pass
         finally:
-            # Schedule next check
-            self.after(100, self.check_update_queue)
+            # Schedule next check (only if not closing)
+            if not self.is_closing:
+                self.check_update_job = self.after(100, self.check_update_queue)
+                if self.check_update_job:
+                    self.pending_callbacks.append(self.check_update_job)
     
     def update_sensor_readings(self):
         """Periodically update sensor readings"""
+        if self.is_closing:
+            return
         if not self.exp_manager.is_running:
             try:
                 pressure = self.hw_controller.read_pressure_sensor()
@@ -215,8 +240,113 @@ class FluidicControlApp(ctk.CTk):
             except Exception as e:
                 print(f"Error reading sensors: {e}")
         
-        # Schedule next update
-        self.after(1000, self.update_sensor_readings)
+        # Schedule next update (only if not closing)
+        if not self.is_closing:
+            self.sensor_update_job = self.after(1000, self.update_sensor_readings)
+            if self.sensor_update_job:
+                self.pending_callbacks.append(self.sensor_update_job)
+    
+    def on_closing(self):
+        """Handle window close event - cleanup all resources"""
+        print("Application closing...")
+        self.is_closing = True
+        
+        # Cancel ALL scheduled callbacks
+        try:
+            # Cancel tracked callbacks
+            if self.check_update_job:
+                try:
+                    self.after_cancel(self.check_update_job)
+                except:
+                    pass
+                self.check_update_job = None
+            if self.sensor_update_job:
+                try:
+                    self.after_cancel(self.sensor_update_job)
+                except:
+                    pass
+                self.sensor_update_job = None
+            if self.smu_refresh_job:
+                try:
+                    self.after_cancel(self.smu_refresh_job)
+                except:
+                    pass
+                self.smu_refresh_job = None
+            
+            # Cancel all pending callbacks
+            for callback_id in self.pending_callbacks:
+                try:
+                    self.after_cancel(callback_id)
+                except:
+                    pass
+            self.pending_callbacks.clear()
+            
+            # Try to cancel any remaining after() callbacks by checking common IDs
+            # This is a workaround for CustomTkinter internal callbacks
+            try:
+                # Update to process any pending events before destroying
+                self.update_idletasks()
+            except:
+                pass
+        except Exception as e:
+            print(f"Error cancelling scheduled callbacks: {e}")
+        
+        # Stop all running experiments
+        try:
+            self.exp_manager.stop_experiment()
+            self.exp_manager.finish_experiment()
+        except Exception as e:
+            print(f"Error stopping experiments: {e}")
+        
+        # Close data file if open
+        try:
+            if self.data_handler.file_path:
+                self.data_handler.close_file()
+        except Exception as e:
+            print(f"Error closing data file: {e}")
+        
+        # Cleanup hardware connections
+        try:
+            self.hw_controller.cleanup()
+        except Exception as e:
+            print(f"Error cleaning up hardware: {e}")
+        
+        # Cleanup tabs
+        try:
+            if hasattr(self, 'main_tab_instance'):
+                self.main_tab_instance.cleanup()
+            if hasattr(self, 'iv_tab_instance'):
+                self.iv_tab_instance.cleanup()
+            if hasattr(self, 'program_tab_instance'):
+                self.program_tab_instance.cleanup()
+            if hasattr(self, 'browser_tab_instance'):
+                self.browser_tab_instance.cleanup()
+            if hasattr(self, 'scheduler_tab_instance'):
+                self.scheduler_tab_instance.cleanup()
+        except Exception as e:
+            print(f"Error cleaning up tabs: {e}")
+        
+        # Destroy window and quit mainloop
+        print("Application closed.")
+        import os
+        
+        try:
+            # First, quit the mainloop to stop processing events
+            self.quit()
+        except Exception as e:
+            print(f"Error quitting mainloop: {e}")
+        
+        try:
+            # Then destroy the window
+            self.destroy()
+        except Exception as e:
+            print(f"Error destroying window: {e}")
+        
+        # Force exit to ensure process terminates immediately
+        # This prevents CustomTkinter internal callbacks from causing errors
+        # os._exit() terminates immediately without running cleanup handlers
+        # (We've already done all cleanup above)
+        os._exit(0)
 
 
 # --- Main Application Loop ---

@@ -25,12 +25,19 @@ class IVTab(BaseTab):
         self.iv_x_data, self.iv_y_data = [], []
         self.iv_time_x_data, self.iv_time_v_data, self.iv_time_i_data = [], [], []
         self.iv_measurement_start_time = None
+        self.iv_measurement_stop = False  # Flag to stop measurement
         
         # Create widgets
         self.create_widgets()
         
         # Setup graphs
         self.setup_graphs()
+        
+        # Refresh MCusb status on startup
+        self.after(1000, self.refresh_mcusb_status)
+        
+        # Start periodic update of MCusb readings (every 100ms for real-time)
+        self.update_mcusb_readings()
     
     def create_widgets(self):
         """Create IV tab widgets"""
@@ -97,6 +104,32 @@ class IVTab(BaseTab):
         ctk.CTkButton(smu_control_btn_frame, text='Measure', command=self.measure_smu_manual, width=100, height=30).pack(side='left', padx=2)
         ctk.CTkButton(smu_control_btn_frame, text='Output OFF', command=self.smu_output_off, width=100, height=30, fg_color='red').pack(side='left', padx=2)
         
+        # MCusb-1408FS-Plus DAQ Status (Primary measurement device)
+        mcusb_status_frame = ctk.CTkFrame(left_frame)
+        mcusb_status_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(mcusb_status_frame, text="MCusb-1408FS-Plus DAQ Status", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        mcusb_info_frame = ctk.CTkFrame(mcusb_status_frame)
+        mcusb_info_frame.pack(fill='x', padx=5, pady=5)
+        
+        ctk.CTkLabel(mcusb_info_frame, text='Status:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+        self.mcusb_status_label = ctk.CTkLabel(mcusb_info_frame, text='Checking...', width=250, anchor='w')
+        self.mcusb_status_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
+        
+        ctk.CTkLabel(mcusb_info_frame, text='Device:', width=100).grid(row=1, column=0, padx=5, pady=2, sticky='w')
+        self.mcusb_device_label = ctk.CTkLabel(mcusb_info_frame, text='N/A', width=250, anchor='w')
+        self.mcusb_device_label.grid(row=1, column=1, padx=5, pady=2, sticky='w')
+        
+        ctk.CTkLabel(mcusb_info_frame, text='Channel 0 (IN HI):', width=100).grid(row=2, column=0, padx=5, pady=2, sticky='w')
+        self.mcusb_ch0_label = ctk.CTkLabel(mcusb_info_frame, text='N/A', width=250, anchor='w')
+        self.mcusb_ch0_label.grid(row=2, column=1, padx=5, pady=2, sticky='w')
+        
+        # Control buttons
+        mcusb_btn_frame = ctk.CTkFrame(mcusb_status_frame)
+        mcusb_btn_frame.pack(pady=5)
+        ctk.CTkButton(mcusb_btn_frame, text='🔄 Refresh', command=self.refresh_mcusb_status, width=120, height=30).pack(side='left', padx=2)
+        ctk.CTkButton(mcusb_btn_frame, text='📊 Read Channels', command=self.read_mcusb_channels, width=120, height=30).pack(side='left', padx=2)
+        
         # I-V Parameters
         params_frame = ctk.CTkFrame(left_frame)
         params_frame.pack(fill='x', pady=5)
@@ -146,6 +179,8 @@ class IVTab(BaseTab):
         btn_frame.pack(pady=5)
         ctk.CTkButton(btn_frame, text='Direct setting', command=self.iv_direct_set, width=150, height=35).pack(pady=2)
         ctk.CTkButton(btn_frame, text='Direct run', command=self.iv_direct_run, width=150, height=35, fg_color='green').pack(pady=2)
+        self.iv_stop_button = ctk.CTkButton(btn_frame, text='Stop Measurement', command=self.iv_stop_measurement, width=150, height=35, fg_color='red', state='disabled')
+        self.iv_stop_button.pack(pady=2)
         
         # Program Control
         prog_frame = ctk.CTkFrame(left_frame)
@@ -436,6 +471,64 @@ class IVTab(BaseTab):
         except Exception as e:
             self.smu_status_label.configure(text=f'Error: {str(e)[:30]}', text_color='orange')
     
+    def refresh_mcusb_status(self):
+        """Refresh MCusb-1408FS-Plus connection status display"""
+        try:
+            if self.hw_controller.ni_daq and self.hw_controller.ni_daq.is_connected():
+                self.mcusb_status_label.configure(text='Connected', text_color='green')
+                self.mcusb_device_label.configure(text=self.hw_controller.ni_device_name)
+                # Read channels
+                self.read_mcusb_channels()
+            else:
+                self.mcusb_status_label.configure(text='Not Connected', text_color='red')
+                self.mcusb_device_label.configure(text='N/A')
+                self.mcusb_ch0_label.configure(text='N/A')
+        except Exception as e:
+            self.mcusb_status_label.configure(text=f'Error: {str(e)[:30]}', text_color='orange')
+    
+    def read_mcusb_channels(self):
+        """Read voltage from MCusb-1408FS-Plus channels"""
+        try:
+            if not self.hw_controller.ni_daq or not self.hw_controller.ni_daq.is_connected():
+                messagebox.showwarning('Not Connected', 'MCusb-1408FS-Plus is not connected.')
+                return
+            
+            # Read Channel 0 (IN HI) - try differential first (if IN HI and IN LO are on CH0)
+            # If that doesn't work, fall back to single-ended
+            voltage_ch0 = self.hw_controller.ni_daq.read_analog_input('ai0', differential=True)
+            if voltage_ch0 is None:
+                # Fall back to single-ended if differential fails
+                voltage_ch0 = self.hw_controller.ni_daq.read_analog_input('ai0', differential=False)
+            
+            if voltage_ch0 is not None:
+                self.mcusb_ch0_label.configure(text=f'{voltage_ch0:.4f} V', text_color='green')
+            else:
+                self.mcusb_ch0_label.configure(text='Error reading', text_color='red')
+                
+        except Exception as e:
+            messagebox.showerror('Error', f'Error reading MCusb channels: {e}')
+    
+    def update_mcusb_readings(self):
+        """Periodically update MCusb channel readings in real-time"""
+        try:
+            if self.hw_controller.ni_daq and self.hw_controller.ni_daq.is_connected():
+                # Read Channel 0 (IN HI) - try differential first (if IN HI and IN LO are on CH0)
+                # If that doesn't work, fall back to single-ended
+                voltage_ch0 = self.hw_controller.ni_daq.read_analog_input('ai0', differential=True)
+                if voltage_ch0 is None:
+                    # Fall back to single-ended if differential fails
+                    voltage_ch0 = self.hw_controller.ni_daq.read_analog_input('ai0', differential=False)
+                
+                if voltage_ch0 is not None:
+                    self.mcusb_ch0_label.configure(text=f'{voltage_ch0:.4f} V', text_color='green')
+                else:
+                    self.mcusb_ch0_label.configure(text='Error', text_color='red')
+        except Exception as e:
+            pass  # Silently fail to avoid spam
+        
+        # Schedule next update (every 100ms for real-time updates)
+        self.after(100, self.update_mcusb_readings)
+    
     def list_visa_devices(self):
         """List all available VISA devices"""
         try:
@@ -539,11 +632,25 @@ class IVTab(BaseTab):
             stop_val = float(self.iv_stop_entry.get()) if self.iv_stop_entry.get() else 2.0
             step_val = float(self.iv_step_entry.get()) if self.iv_step_entry.get() else 0.1
             
+            # Reset stop flag and enable stop button
+            self.iv_measurement_stop = False
+            if hasattr(self, 'iv_stop_button'):
+                self.iv_stop_button.configure(state='normal')
+            
             threading.Thread(target=self.run_iv_measurement,
                            args=(start_val, stop_val, step_val),
                            daemon=True).start()
         except ValueError:
             messagebox.showerror('Error', "Invalid input values. Please enter numbers.")
+    
+    def iv_stop_measurement(self):
+        """Stop IV measurement"""
+        self.iv_measurement_stop = True
+        if hasattr(self, 'iv_stop_button'):
+            self.iv_stop_button.configure(state='disabled')
+        if self.update_queue:
+            self.update_queue.put(('UPDATE_IV_STATUS', ('Stopped', 'orange')))
+            self.update_queue.put(('UPDATE_IV_STATUS_BAR', "Measurement stopped by user"))
     
     def iv_choose_program(self):
         """IV choose program - placeholder"""
@@ -569,6 +676,9 @@ class IVTab(BaseTab):
     
     def run_iv_measurement(self, start_val, stop_val, step_val):
         """Run I-V measurement in separate thread"""
+        # Reset stop flag
+        self.iv_measurement_stop = False
+        
         if self.update_queue:
             self.update_queue.put(('UPDATE_IV_STATUS', ('Measuring...', 'orange')))
             self.update_queue.put(('UPDATE_IV_STATUS_BAR', "Starting I-V measurement..."))
@@ -629,6 +739,17 @@ class IVTab(BaseTab):
             
             # Perform I-V sweep
             for voltage in voltage_points:
+                # Check if measurement should be stopped
+                if self.iv_measurement_stop:
+                    print("Measurement stopped by user")
+                    if self.update_queue:
+                        self.update_queue.put(('UPDATE_IV_STATUS', ('Stopped', 'orange')))
+                        self.update_queue.put(('UPDATE_IV_STATUS_BAR', "Measurement stopped by user"))
+                    # Disable stop button
+                    if hasattr(self, 'iv_stop_button'):
+                        self.after(0, lambda: self.iv_stop_button.configure(state='disabled'))
+                    break
+                
                 if self.hw_controller.smu:
                     try:
                         self.hw_controller.set_smu_voltage(voltage, current_limit)
@@ -637,6 +758,26 @@ class IVTab(BaseTab):
                         except:
                             delay = 0.1
                         time.sleep(delay)
+                        
+                        # Read voltage from MCusb channel 0 (IN HI)
+                        # Try differential first (if IN HI and IN LO are on CH0), then fall back to single-ended
+                        # This gives us the actual voltage being applied, measured independently
+                        if self.hw_controller.ni_daq and self.hw_controller.ni_daq.is_connected():
+                            try:
+                                # Try differential first (IN HI - IN LO on CH0)
+                                mcusb_voltage = self.hw_controller.ni_daq.read_analog_input('ai0', differential=True)
+                                if mcusb_voltage is None:
+                                    # Fall back to single-ended if differential fails
+                                    mcusb_voltage = self.hw_controller.ni_daq.read_analog_input('ai0', differential=False)
+                                
+                                if mcusb_voltage is not None:
+                                    # Update display in real-time via queue
+                                    if self.update_queue:
+                                        self.update_queue.put(('UPDATE_MCUSB_CH0', mcusb_voltage))
+                                    print(f"MCusb CH0 (IN HI) reading: {mcusb_voltage:.4f}V (SMU set: {voltage}V)")
+                            except Exception as e:
+                                print(f"Error reading MCusb during sweep: {e}")
+                        
                         measurement = self.hw_controller.measure_smu()
                         if measurement:
                             current = measurement['current']
@@ -662,6 +803,17 @@ class IVTab(BaseTab):
                 self.iv_time_v_data.append(voltage)
                 self.iv_time_i_data.append(current)
                 
+                # Check stop flag again before continuing (in case it was set during measurement)
+                if self.iv_measurement_stop:
+                    print("Measurement stopped by user")
+                    if self.update_queue:
+                        self.update_queue.put(('UPDATE_IV_STATUS', ('Stopped', 'orange')))
+                        self.update_queue.put(('UPDATE_IV_STATUS_BAR', "Measurement stopped by user"))
+                    # Disable stop button
+                    if hasattr(self, 'iv_stop_button'):
+                        self.after(0, lambda: self.iv_stop_button.configure(state='disabled'))
+                    break
+                
                 if self.update_queue:
                     self.update_queue.put(('UPDATE_IV_GRAPH', (list(self.iv_x_data), list(self.iv_y_data))))
                     progress = len(self.iv_x_data)
@@ -679,6 +831,10 @@ class IVTab(BaseTab):
             if self.update_queue:
                 self.update_queue.put(('UPDATE_IV_STATUS', ('Completed', 'green')))
                 self.update_queue.put(('UPDATE_IV_STATUS_BAR', "I-V measurement completed"))
+            
+            # Disable stop button when measurement completes
+            if hasattr(self, 'iv_stop_button'):
+                self.after(0, lambda: self.iv_stop_button.configure(state='disabled'))
             
         except Exception as e:
             if self.update_queue:

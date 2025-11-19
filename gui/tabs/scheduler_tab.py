@@ -21,12 +21,13 @@ class SchedulerTab(BaseTab):
         
         # Scheduled experiments tracking
         self.scheduled_items = []
+        self.refresh_job = None
         
         # Create widgets
         self.create_widgets()
         
         # Initialize scheduled experiments list
-        self.after(100, self.refresh_scheduled_experiments)
+        self.refresh_job = self.after(100, self.refresh_scheduled_experiments)
     
     def create_widgets(self):
         """Create Scheduler tab widgets"""
@@ -193,4 +194,13 @@ class SchedulerTab(BaseTab):
                 os.remove(schedule_file)
             self.refresh_scheduled_experiments()
             messagebox.showinfo('Success', 'All scheduled experiments cleared.')
+    
+    def cleanup(self):
+        """Cleanup when tab is closed"""
+        if self.refresh_job:
+            try:
+                self.after_cancel(self.refresh_job)
+            except:
+                pass
+            self.refresh_job = None
 

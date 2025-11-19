@@ -56,7 +56,7 @@ try:
     test_commands_1 = [
         ("SOUR:FUNC VOLT", "Set source function to voltage"),
         ('SENS:FUNC "CURR"', "Set sense function to current"),
-        ('SENS:CURR:PROT 0.1', "Set current protection - CHECK THIS!"),
+        ("SOUR:VOLT:ILIM 0.1", "Set current limit (compliance) - FIXED: was SENS:CURR:PROT"),
         ('SENS:CURR:NPLC 1', "Set NPLC"),
         ('SENS:CURR:RANG 0.1', "Set current range"),
         ("OUTP ON", "Turn output on"),
@@ -82,15 +82,13 @@ try:
         ("*RST", "Reset"),
         ("SOUR:FUNC VOLT", "Set source function"),
         ("SOUR:VOLT:RANG 10", "Set voltage range"),
-        ("SOUR:VOLT:ILIM 0.1", "Set current limit - CHECK THIS!"),
+        ("SOUR:VOLT:ILIM 0.1", "Set current limit (compliance)"),
         ('SENS:FUNC "CURR"', "Set sense function"),
         ("SENS:CURR:RANG 0.1", "Set current range"),
-        ("SOUR:VOLT:STARt 0", "Set start voltage"),
-        ("SOUR:VOLT:STOP 5", "Set stop voltage"),
-        ("SOUR:SWE:POIN 11", "Set sweep points"),
-        ("SOUR:SWE:SPAC LIN", "Set sweep spacing"),
-        ("SOUR:SWE:VOLT:STAT ON", "Enable voltage sweep - CHECK THIS!"),
+        ("SENS:CURR:NPLC 1", "Set NPLC"),
         ("SENS:CURR:APER 0.1", "Set aperture"),
+        # Note: Using manual sweep mode (not built-in sweep) to avoid trigger model issues
+        # Removed: SOUR:VOLT:STARt, SOUR:VOLT:STOP, SOUR:SWE:POIN, SOUR:SWE:SPAC, SOUR:SWE:VOLT:STAT
     ]
     
     for cmd, desc in test_commands_2:

@@ -50,6 +50,13 @@ The system is built with a modular architecture:
 * **`browser_tab.py`** - Experiment browser
 * **`scheduler_tab.py`** - Experiment scheduler
 
+**Test Scripts** (`tests/`):
+* Hardware detection and connection tests
+* MCusb-1408FS-Plus DAQ tests
+* Keithley 2450 SMU tests
+* SCPI command validation tests
+* See `tests/README.md` for details
+
 ### Installation
 To run the software, ensure you have Python 3.7+ and pip installed.
 
