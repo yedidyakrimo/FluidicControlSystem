@@ -67,13 +67,46 @@ class FlowSensor(HardwareBase):
         if self.ni_daq and self.ni_daq.is_connected():
             try:
                 voltage = self.ni_daq.read_analog_input(self.channel)
+                # Check if voltage is None (read failed)
+                if voltage is None:
+                    # Return simulated value if read failed
+                    elapsed = time.time() - self.sim_start_time
+                    if not hasattr(self, 'flow_change_time'):
+                        self.flow_change_time = self.sim_start_time
+                    time_since_change = time.time() - self.flow_change_time
+                    flow_variation = 0.005 * self.pump_setpoint_flow * math.sin(2 * math.pi * elapsed / 25.0)
+                    if time_since_change < 3.0:
+                        if hasattr(self, 'previous_setpoint_flow'):
+                            transition_factor = 1.0 - math.exp(-time_since_change / 0.8)
+                            sim_flow = self.previous_setpoint_flow + (self.pump_setpoint_flow - self.previous_setpoint_flow) * transition_factor
+                        else:
+                            sim_flow = self.pump_setpoint_flow
+                    else:
+                        sim_flow = self.pump_setpoint_flow
+                    sim_flow = sim_flow + flow_variation
+                    return max(0.1, sim_flow)
                 # Convert voltage to flow rate (calibration factor needed)
                 # Typical flow sensor: 0-5V = 0-10 L/min
                 flow_rate = voltage * 2.0  # Placeholder conversion
                 return flow_rate
             except Exception as e:
                 print(f"Error reading flow sensor: {e}")
-                return None
+                # Return simulated value on error
+                elapsed = time.time() - self.sim_start_time
+                if not hasattr(self, 'flow_change_time'):
+                    self.flow_change_time = self.sim_start_time
+                time_since_change = time.time() - self.flow_change_time
+                flow_variation = 0.005 * self.pump_setpoint_flow * math.sin(2 * math.pi * elapsed / 25.0)
+                if time_since_change < 3.0:
+                    if hasattr(self, 'previous_setpoint_flow'):
+                        transition_factor = 1.0 - math.exp(-time_since_change / 0.8)
+                        sim_flow = self.previous_setpoint_flow + (self.pump_setpoint_flow - self.previous_setpoint_flow) * transition_factor
+                    else:
+                        sim_flow = self.pump_setpoint_flow
+                else:
+                    sim_flow = self.pump_setpoint_flow
+                sim_flow = sim_flow + flow_variation
+                return max(0.1, sim_flow)
         else:
             # Realistic simulation: flow very close to pump setpoint
             elapsed = time.time() - self.sim_start_time

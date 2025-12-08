@@ -208,7 +208,10 @@ class Keithley2450(HardwareBase):
     
     def get_info(self):
         """
-        Get information about the connected SMU
+        Get information about the connected SMU with active health check
+        
+        Performs an active "ping" by sending *IDN? command.
+        If timeout or error occurs, closes connection and marks as disconnected.
         
         Returns:
             Dictionary with device information
@@ -217,6 +220,8 @@ class Keithley2450(HardwareBase):
             return {"connected": False, "info": "SMU not connected"}
         
         try:
+            # Active Health Check: Send *IDN? command with timeout
+            # This verifies the device is actually responsive, not just that the port is open
             idn = self.smu.query(self.scpi.identify())
             return {
                 "connected": True,
@@ -224,9 +229,25 @@ class Keithley2450(HardwareBase):
                 "resource": self.smu.resource_name
             }
         except Exception as e:
+            # Timeout or communication error - device is not responsive
+            error_msg = str(e)
+            print(f"SMU health check failed: {error_msg}")
+            
+            # Close the connection explicitly
+            try:
+                if self.smu:
+                    self.smu.close()
+            except:
+                pass
+            
+            # Mark as disconnected
+            self.smu = None
+            self.connected = False
+            
             return {
                 "connected": False,
-                "error": str(e)
+                "error": error_msg,
+                "info": "Connection closed due to timeout/error"
             }
     
     def setup_for_iv_measurement(self, current_limit=0.1, voltage_range=None):
@@ -385,6 +406,81 @@ class Keithley2450(HardwareBase):
             return True
         except Exception as e:
             print(f"Error setting SMU voltage: {e}")
+            return False
+    
+    def setup_for_current_source_measurement(self, voltage_limit=20.0, current_range=None):
+        """
+        Setup SMU for current source / voltage measurement mode
+        
+        Args:
+            voltage_limit: Voltage limit (compliance) (V)
+            current_range: Current range (A). If None, will use default range.
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.smu:
+            print("SMU not connected. Cannot setup SMU.")
+            return False
+        
+        try:
+            # Configure as current source
+            print("Sending: SOUR:FUNC CURR")
+            self.smu.write(self.scpi.set_source_current())
+            
+            # Set current range
+            if current_range is None:
+                current_range = 0.1  # Default to 100mA range
+            print(f"Sending: SOUR:CURR:RANG {current_range}")
+            self.smu.write(self.scpi.set_current_source_range(current_range))
+            
+            # Set voltage limit (compliance)
+            print(f"Sending: SOUR:CURR:VLIM {voltage_limit}")
+            self.smu.write(self.scpi.set_voltage_limit(voltage_limit))
+            
+            # Configure measurement function to voltage
+            print('Sending: SENS:FUNC "VOLT"')
+            self.smu.write(self.scpi.set_sense_voltage())
+            
+            # Set voltage range
+            print(f"Sending: SENS:VOLT:RANG {voltage_limit}")
+            self.smu.write(self.scpi.set_voltage_measurement_range(voltage_limit))
+            
+            # Set NPLC
+            print('Sending: SENS:VOLT:NPLC 1')
+            self.smu.write('SENS:VOLT:NPLC 1')
+            
+            # Turn output on
+            print("Sending: OUTP ON")
+            self.smu.write(self.scpi.output_on())
+            
+            print(f"SMU configured for current source mode (voltage limit: {voltage_limit}V, current range: {current_range}A)")
+            return True
+        except Exception as e:
+            print(f"Error setting up SMU for current source: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def set_current(self, current):
+        """
+        Set SMU output current
+        
+        Args:
+            current: Current to set (A)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.smu:
+            print("SMU not connected. Cannot set current.")
+            return False
+        
+        try:
+            self.smu.write(self.scpi.set_current(current))
+            return True
+        except Exception as e:
+            print(f"Error setting SMU current: {e}")
             return False
     
     def measure(self):

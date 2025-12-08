@@ -74,7 +74,8 @@ class DataHandler:
             "level_read",
             "program_step",
             "voltage",
-            "current"
+            "current",
+            "target_voltage"
             # We can add more fieldnames here for other sensors if needed.
         ])
 

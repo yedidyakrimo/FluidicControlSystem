@@ -7,29 +7,29 @@ from experiments.base_experiment import BaseExperiment
 
 
 class IVExperiment(BaseExperiment):
-    """ניסוי I-V - מדידת מאפיין זרם-מתח"""
+    """I-V experiment - current-voltage characteristic measurement"""
     
     def run(self, start_v, end_v, step_v, delay=0.1):
         """
-        הרצת ניסוי I-V
-        start_v: מתח התחלתי (V)
-        end_v: מתח סופי (V)
-        step_v: גודל צעד (V)
-        delay: השהיה בין מדידות (שניות)
+        Run I-V experiment
+        start_v: Start voltage (V)
+        end_v: End voltage (V)
+        step_v: Step size (V)
+        delay: Delay between measurements (seconds)
         """
         if not self.is_running:
             self.is_running = True
             print("Starting I-V measurement...")
         
         try:
-            # יצירת קובץ נתונים חדש
+            # Create new data file
             self.data_handler.create_new_file()
             
-            # הגדרת SMU למדידת I-V (sweep ידני, לא שימוש ב-sweep מובנה)
+            # Setup SMU for I-V measurement (manual sweep, not using built-in sweep)
             if self.hw_controller.smu:
                 self.hw_controller.setup_smu_iv_sweep(start_v, end_v, step_v)
             
-            # חישוב נקודות מתח ל-sweep ידני
+            # Calculate voltage points for manual sweep
             if start_v <= end_v:
                 voltage_points = []
                 v = start_v
@@ -43,25 +43,25 @@ class IVExperiment(BaseExperiment):
                     voltage_points.append(v)
                     v -= step_v
             
-            # ביצוע sweep ידני - הגדרת מתח ומדידה לכל נקודה
+            # Perform manual sweep - set voltage and measure for each point
             for voltage in voltage_points:
                 if not self.is_running:
                     break
                 
-                # הגדרת מתח
+                # Set voltage
                 if self.hw_controller.smu:
                     self.hw_controller.set_smu_voltage(voltage)
-                    time.sleep(0.1)  # המתנה לייצוב מתח
-                    # מדידה
+                    time.sleep(0.1)  # Wait for voltage stabilization
+                    # Measure
                     smu_data = self.hw_controller.measure_smu()
                     if smu_data:
                         self.data_handler.append_data(smu_data)
                 else:
-                    # מצב סימולציה
+                    # Simulation mode
                     smu_data = {"voltage": voltage, "current": voltage * 0.1}
                     self.data_handler.append_data(smu_data)
                 
-                time.sleep(delay)  # השהיה בין מדידות
+                time.sleep(delay)  # Delay between measurements
         
         except Exception as e:
             print(f"Error in I-V experiment: {e}")

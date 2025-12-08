@@ -74,9 +74,9 @@ class SchedulerTab(BaseTab):
         schedule_action_frame = ctk.CTkFrame(self)
         schedule_action_frame.pack(fill='x', padx=10, pady=5)
         
-        ctk.CTkButton(schedule_action_frame, text='Schedule Experiment', command=self.schedule_experiment, width=150).pack(side='left', padx=5)
-        ctk.CTkButton(schedule_action_frame, text='Remove Selected', command=self.remove_scheduled, width=150).pack(side='left', padx=5)
-        ctk.CTkButton(schedule_action_frame, text='Clear All', command=self.clear_scheduled, width=150).pack(side='left', padx=5)
+        self.create_blue_button(schedule_action_frame, text='Schedule Experiment', command=self.schedule_experiment, width=150).pack(side='left', padx=5)
+        self.create_blue_button(schedule_action_frame, text='Remove Selected', command=self.remove_scheduled, width=150).pack(side='left', padx=5)
+        self.create_blue_button(schedule_action_frame, text='Clear All', command=self.clear_scheduled, width=150).pack(side='left', padx=5)
     
     def schedule_experiment(self):
         """Schedule an experiment"""

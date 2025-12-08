@@ -243,7 +243,11 @@ class FluidicControlApp(ctk.CTk):
                         elif update_type == 'UPDATE_READINGS':
                             pressure, temp, flow, level = data
                             self.main_tab_instance.pressure_label.configure(text=f"{pressure:.2f} PSI")
-                            self.main_tab_instance.temp_label.configure(text=f"{temp:.2f} °C")
+                            # Handle None temperature (sensor disconnected)
+                            if temp is not None:
+                                self.main_tab_instance.temp_label.configure(text=f"{temp:.2f} °C", text_color='green')
+                            else:
+                                self.main_tab_instance.temp_label.configure(text="---", text_color='red')
                             self.main_tab_instance.flow_label.configure(text=f"{flow:.2f} ml/min")
                             self.main_tab_instance.level_label.configure(text=f"{level:.2f} %")
                 

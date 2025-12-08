@@ -60,9 +60,17 @@ class HardwareController:
         """Read pump data"""
         return self.pump.read_data()
     
+    def start_pump(self):
+        """Start the pump"""
+        return self.pump.start()
+    
     def stop_pump(self):
         """Stop pump"""
-        self.pump.stop()
+        return self.pump.stop()
+    
+    def get_pump_pressure(self):
+        """Get current pressure from pump"""
+        return self.pump.get_pressure()
     
     # --- Sensor Read Functions (backward compatibility) ---
     def read_pressure_sensor(self):
@@ -139,6 +147,14 @@ class HardwareController:
     def set_smu_voltage(self, voltage, current_limit=0.1):
         """Set SMU voltage"""
         return self.smu.set_voltage(voltage)
+    
+    def setup_smu_for_current_source(self, voltage_limit=20.0, current_range=None):
+        """Setup SMU for current source / voltage measurement mode"""
+        return self.smu.setup_for_current_source_measurement(voltage_limit, current_range)
+    
+    def set_smu_current(self, current):
+        """Set SMU current"""
+        return self.smu.set_current(current)
     
     def measure_smu(self):
         """Measure voltage and current from SMU"""

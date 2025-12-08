@@ -32,6 +32,15 @@ class MainTab(BaseTab):
         self.last_total_time = 0.0
         self.experiment_base_time = None
         
+        # Keithley 2450 control variables
+        self.keithley_mode = "voltage"  # "voltage" or "current"
+        self.keithley_bias_value = 0.0
+        self.keithley_output_enabled = False
+        self.keithley_current_limit = 0.1
+        self.keithley_voltage_data = []
+        self.keithley_current_data = []
+        self.keithley_time_data = []
+        
         # Create widgets
         self.create_widgets()
         
@@ -40,6 +49,9 @@ class MainTab(BaseTab):
         
         # Refresh pump status on startup
         self.after(500, self.refresh_pump_status)
+        
+        # Refresh Keithley status on startup
+        self.after(1000, self.refresh_keithley_status)
     
     def create_widgets(self):
         """Create Main tab widgets"""
@@ -252,6 +264,89 @@ class MainTab(BaseTab):
         self.status_bar = ctk.CTkLabel(left_frame, text='', font=('Helvetica', 10))
         self.status_bar.pack(pady=5)
         
+        # ========== KEITHLEY 2450 CONTROL PANEL ==========
+        keithley_frame = ctk.CTkFrame(left_frame)
+        keithley_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(keithley_frame, text="Keithley 2450 SMU Control", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        # SMU Connection Status
+        smu_status_frame = ctk.CTkFrame(keithley_frame)
+        smu_status_frame.pack(fill='x', padx=5, pady=5)
+        
+        ctk.CTkLabel(smu_status_frame, text='Status:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+        self.keithley_status_label = ctk.CTkLabel(smu_status_frame, text='Checking...', width=250, anchor='w')
+        self.keithley_status_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
+        
+        # Measurement Mode Selector
+        mode_frame = ctk.CTkFrame(keithley_frame)
+        mode_frame.pack(fill='x', padx=5, pady=5)
+        ctk.CTkLabel(mode_frame, text="Measurement Mode:", font=('Helvetica', 12, 'bold')).pack(pady=2)
+        
+        self.keithley_mode_var = ctk.StringVar(value="voltage")
+        mode_radio_frame = ctk.CTkFrame(mode_frame)
+        mode_radio_frame.pack(pady=2)
+        ctk.CTkRadioButton(mode_radio_frame, text="Source Voltage / Measure Current", 
+                          variable=self.keithley_mode_var, value="voltage",
+                          command=self.on_keithley_mode_change).pack(side='left', padx=5)
+        ctk.CTkRadioButton(mode_radio_frame, text="Source Current / Measure Voltage", 
+                          variable=self.keithley_mode_var, value="current",
+                          command=self.on_keithley_mode_change).pack(side='left', padx=5)
+        
+        # Bias Input Field (dynamic label)
+        bias_frame = ctk.CTkFrame(keithley_frame)
+        bias_frame.pack(fill='x', padx=5, pady=5)
+        self.keithley_bias_label = ctk.CTkLabel(bias_frame, text='Bias Voltage (V):', width=150)
+        self.keithley_bias_label.pack(side='left', padx=5)
+        self.keithley_bias_entry = ctk.CTkEntry(bias_frame, width=100)
+        self.keithley_bias_entry.insert(0, '0.0')
+        self.keithley_bias_entry.pack(side='left', padx=5)
+        
+        # Current Limit (for voltage mode)
+        current_limit_frame = ctk.CTkFrame(keithley_frame)
+        current_limit_frame.pack(fill='x', padx=5, pady=5)
+        ctk.CTkLabel(current_limit_frame, text='Current Limit (A):', width=150).pack(side='left', padx=5)
+        self.keithley_current_limit_entry = ctk.CTkEntry(current_limit_frame, width=100)
+        self.keithley_current_limit_entry.insert(0, '0.1')
+        self.keithley_current_limit_entry.pack(side='left', padx=5)
+        
+        # Voltage Limit (for current mode) - initially hidden
+        voltage_limit_frame = ctk.CTkFrame(keithley_frame)
+        voltage_limit_frame.pack(fill='x', padx=5, pady=5)
+        ctk.CTkLabel(voltage_limit_frame, text='Voltage Limit (V):', width=150).pack(side='left', padx=5)
+        self.keithley_voltage_limit_entry = ctk.CTkEntry(voltage_limit_frame, width=100)
+        self.keithley_voltage_limit_entry.insert(0, '20.0')
+        # Initially hidden (only shown in current mode)
+        self.keithley_voltage_limit_entry.pack_forget()
+        
+        # Enable SMU Output Toggle
+        output_frame = ctk.CTkFrame(keithley_frame)
+        output_frame.pack(fill='x', padx=5, pady=5)
+        self.keithley_output_var = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(output_frame, text="Enable SMU Output", variable=self.keithley_output_var,
+                     command=self.on_keithley_output_toggle).pack(side='left', padx=5)
+        
+        # Current Readings Display
+        readings_smu_frame = ctk.CTkFrame(keithley_frame)
+        readings_smu_frame.pack(fill='x', padx=5, pady=5)
+        ctk.CTkLabel(readings_smu_frame, text="SMU Readings", font=('Helvetica', 12, 'bold')).pack(pady=2)
+        
+        smu_readings_grid = ctk.CTkFrame(readings_smu_frame)
+        smu_readings_grid.pack(fill='x', padx=5, pady=5)
+        
+        ctk.CTkLabel(smu_readings_grid, text='Voltage:', width=120).grid(row=0, column=0, padx=5, pady=2)
+        self.keithley_voltage_label = ctk.CTkLabel(smu_readings_grid, text='N/A', width=180)
+        self.keithley_voltage_label.grid(row=0, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(smu_readings_grid, text='Current:', width=120).grid(row=1, column=0, padx=5, pady=2)
+        self.keithley_current_label = ctk.CTkLabel(smu_readings_grid, text='N/A', width=180)
+        self.keithley_current_label.grid(row=1, column=1, padx=5, pady=2)
+        
+        # Refresh SMU Status button
+        smu_btn_frame = ctk.CTkFrame(keithley_frame)
+        smu_btn_frame.pack(pady=5)
+        self.create_blue_button(smu_btn_frame, text='🔄 Refresh SMU Status', 
+                               command=self.refresh_keithley_status, width=150, height=30).pack(side='left', padx=2)
+        
         # Right column container
         right_container = Frame(paned, bg='#1a1a1a')
         paned.add(right_container, minsize=400)
@@ -280,14 +375,14 @@ class MainTab(BaseTab):
         axis_label_frame.pack(fill='x', padx=5, pady=2)
         ctk.CTkLabel(axis_label_frame, text='X-Axis:', width=60).pack(side='left', padx=5)
         self.x_axis_combo = ctk.CTkComboBox(axis_label_frame, 
-                                            values=['Time', 'Flow Rate', 'Pressure', 'Temperature', 'Level'],
+                                            values=['Time', 'Flow Rate', 'Pressure', 'Temperature', 'Level', 'Voltage', 'Current'],
                                             width=150, command=self.on_axis_change)
         self.x_axis_combo.set('Time')
         self.x_axis_combo.pack(side='left', padx=5)
         
         ctk.CTkLabel(axis_label_frame, text='Y-Axis:', width=60).pack(side='left', padx=5)
         self.y_axis_combo = ctk.CTkComboBox(axis_label_frame,
-                                            values=['Flow Rate', 'Pressure', 'Temperature', 'Level'],
+                                            values=['Flow Rate', 'Pressure', 'Temperature', 'Level', 'Voltage', 'Current'],
                                             width=150, command=self.on_axis_change)
         self.y_axis_combo.set('Pressure')
         self.y_axis_combo.pack(side='left', padx=5)
@@ -479,6 +574,9 @@ class MainTab(BaseTab):
             temp_y_copy = list(self.temp_y_data) if self.temp_y_data else []
             level_x_copy = list(self.level_x_data) if self.level_x_data else []
             level_y_copy = list(self.level_y_data) if self.level_y_data else []
+            keithley_time_copy = list(self.keithley_time_data) if self.keithley_time_data else []
+            keithley_voltage_copy = list(self.keithley_voltage_data) if self.keithley_voltage_data else []
+            keithley_current_copy = list(self.keithley_current_data) if self.keithley_current_data else []
         
         # Get the appropriate data arrays based on selected axes
         # For X-axis: Time uses flow_x_data (or any time array), other params use their Y data
@@ -504,6 +602,10 @@ class MainTab(BaseTab):
             x_param = temp_y_copy
         elif x_axis_type == 'Level':
             x_param = level_y_copy
+        elif x_axis_type == 'Voltage':
+            x_param = keithley_voltage_copy
+        elif x_axis_type == 'Current':
+            x_param = keithley_current_copy
         
         if y_axis_type == 'Flow Rate':
             y_param = flow_y_copy
@@ -513,6 +615,10 @@ class MainTab(BaseTab):
             y_param = temp_y_copy
         elif y_axis_type == 'Level':
             y_param = level_y_copy
+        elif y_axis_type == 'Voltage':
+            y_param = keithley_voltage_copy
+        elif y_axis_type == 'Current':
+            y_param = keithley_current_copy
         
         # If X is Time, make sure we use the correct time array that matches the Y data
         if x_axis_type == 'Time' and len(y_param) > 0:
@@ -525,6 +631,10 @@ class MainTab(BaseTab):
                 x_param = temp_x_copy
             elif y_axis_type == 'Level' and len(level_x_copy) > 0:
                 x_param = level_x_copy
+            elif y_axis_type == 'Voltage' and len(keithley_time_copy) > 0:
+                x_param = keithley_time_copy
+            elif y_axis_type == 'Current' and len(keithley_time_copy) > 0:
+                x_param = keithley_time_copy
         
         # If we have x_data and y_data passed in, use those instead (override above)
         if len(x_data) > 0:
@@ -538,7 +648,9 @@ class MainTab(BaseTab):
             'Pressure': {'ylabel': 'Pressure (PSI)', 'unit': 'PSI'},
             'Temperature': {'ylabel': 'Temperature (°C)', 'unit': '°C'},
             'Level': {'ylabel': 'Liquid Level (%)', 'unit': '%'},
-            'Time': {'ylabel': 'Time (s)', 'unit': 's'}
+            'Time': {'ylabel': 'Time (s)', 'unit': 's'},
+            'Voltage': {'ylabel': 'Voltage (V)', 'unit': 'V'},
+            'Current': {'ylabel': 'Current (A)', 'unit': 'A'}
         }
         
         x_style = styles.get(x_axis_type, {'ylabel': x_axis_type, 'unit': ''})
@@ -561,6 +673,10 @@ class MainTab(BaseTab):
                 y_demo = 25 + 5 * np.sin(2 * np.pi * x_demo / 25)
             elif y_axis_type == 'Level':
                 y_demo = 50 + 20 * np.sin(2 * np.pi * x_demo / 30)
+            elif y_axis_type == 'Voltage':
+                y_demo = 1.0 + 0.5 * np.sin(2 * np.pi * x_demo / 20)
+            elif y_axis_type == 'Current':
+                y_demo = 0.001 + 0.0005 * np.sin(2 * np.pi * x_demo / 20)
             else:
                 y_demo = 10 + 2 * np.sin(2 * np.pi * x_demo / 15)
             x_plot = x_demo.tolist()
@@ -628,12 +744,13 @@ class MainTab(BaseTab):
             else:
                 self.pressure_stats_label.configure(text='Mean: N/A | Std: N/A')
             
-            # Temperature statistics
-            if len(temp_y_copy) > 0:
-                temp_mean = np.mean(temp_y_copy)
-                temp_std = np.std(temp_y_copy)
-                temp_min = np.min(temp_y_copy)
-                temp_max = np.max(temp_y_copy)
+            # Temperature statistics (filter out NaN values from disconnected sensor)
+            temp_y_valid = [t for t in temp_y_copy if not (isinstance(t, float) and (np.isnan(t) or np.isinf(t)))]
+            if len(temp_y_valid) > 0:
+                temp_mean = np.mean(temp_y_valid)
+                temp_std = np.std(temp_y_valid)
+                temp_min = np.min(temp_y_valid)
+                temp_max = np.max(temp_y_valid)
                 self.temp_stats_label.configure(text=f'Mean: {temp_mean:.2f} | Std: {temp_std:.2f} | Range: [{temp_min:.2f}, {temp_max:.2f}]')
             else:
                 self.temp_stats_label.configure(text='Mean: N/A | Std: N/A')
@@ -778,6 +895,10 @@ class MainTab(BaseTab):
             self.temp_y_data.clear()
             self.level_x_data.clear()
             self.level_y_data.clear()
+            # Clear Keithley data
+            self.keithley_voltage_data.clear()
+            self.keithley_current_data.clear()
+            self.keithley_time_data.clear()
         
         x_axis_type = self.x_axis_combo.get()
         y_axis_type = self.y_axis_combo.get()
@@ -844,10 +965,79 @@ class MainTab(BaseTab):
             messagebox.showerror('Error', f'Error updating flow rate: {e}')
     
     def refresh_pump_status(self):
-        """Refresh pump connection status"""
+        """Refresh pump connection status (with threading)"""
+        print("DEBUG: Refresh pump button clicked")
+        
+        # 1. Update UI immediately (Main Thread)
+        self.pump_status_label.configure(text="Scanning...", text_color='orange')
+        
+        # 2. Run logic in background thread
+        threading.Thread(target=self._run_refresh_pump_logic, daemon=True).start()
+    
+    def _run_refresh_pump_logic(self):
+        """Background thread for pump status refresh with smart reconnection"""
         try:
+            import time
+            
+            # Step 1: Check current status first (with health check)
+            print("[REFRESH] Checking current pump status...")
             pump_info = self.hw_controller.pump.get_info()
             
+            # Step 2: If already connected and working, don't force reconnect
+            if pump_info.get('connected', False) and not pump_info.get('simulation_mode', False):
+                print("[REFRESH] ✅ Pump already connected and responsive - no reconnection needed")
+                # Schedule UI update
+                self.after(0, lambda: self._update_pump_ui(pump_info))
+                return
+            
+            # Step 3: If not connected or in simulation mode, attempt force reconnection
+            print("[REFRESH] Pump not connected or in simulation mode - attempting FORCE reconnection...")
+            
+            if hasattr(self.hw_controller.pump, 'force_reconnect'):
+                reconnect_success = self.hw_controller.pump.force_reconnect()
+            else:
+                # Fallback to regular connect if force_reconnect doesn't exist
+                reconnect_success = self.hw_controller.pump.connect()
+            
+            # Step 4: Handle success and failure differently
+            if reconnect_success:
+                print("[REFRESH] ✅ Pump force reconnection successful")
+                # Give the pump more time to stabilize after reconnection
+                # Increased to 2.0 seconds to ensure hardware is fully ready
+                time.sleep(2.0)
+                
+                # CRITICAL FIX: Don't call get_info() after successful reconnection
+                # The health check in get_info() might fail while pump is still initializing,
+                # causing it to disconnect the pump again. Instead, trust force_reconnect()
+                # and manually construct the pump_info dictionary with positive values.
+                pump_info = {
+                    "device_name": self.hw_controller.pump.device_name,
+                    "port": self.hw_controller.pump.port,
+                    "connected": True,  # Trust force_reconnect result
+                    "simulation_mode": False,
+                    "is_running": self.hw_controller.pump.is_running,
+                    "current_flow_rate": self.hw_controller.pump.pump_setpoint_flow,
+                    "tube_type": self.hw_controller.pump.tube_type,
+                    "max_flow_rate": self.hw_controller.pump.MAX_FLOW_RATE,
+                    "status": "Connected",
+                    "status_color": "green"
+                }
+                print("[REFRESH] Trusting force_reconnect result - marking as connected without health check")
+            else:
+                print("[REFRESH] ❌ Pump force reconnection failed - staying in simulation mode")
+                # Only call get_info() if reconnection failed to read actual error/disconnected state
+                pump_info = self.hw_controller.pump.get_info()
+            
+            # Step 5: Schedule UI update back on Main Thread
+            self.after(0, lambda: self._update_pump_ui(pump_info))
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[REFRESH] Error during pump refresh: {error_msg}")
+            self.after(0, lambda: self._update_pump_error(error_msg))
+    
+    def _update_pump_ui(self, pump_info):
+        """Update pump UI with results (called on main thread)"""
+        try:
             # Update status label with color
             status_text = pump_info.get('status', 'Unknown')
             status_color = pump_info.get('status_color', 'gray')
@@ -864,10 +1054,129 @@ class MainTab(BaseTab):
             # Update max flow rate display
             max_flow = pump_info.get('max_flow_rate', 5.0)
             self.pump_max_flow_label.configure(text=f'{max_flow:.1f} ml/min')
-            
         except Exception as e:
-            print(f"Error refreshing pump status: {e}")
+            print(f"Error updating pump UI: {e}")
             self.pump_status_label.configure(text='Error', text_color='red')
+    
+    def _update_pump_error(self, error_msg):
+        """Update pump UI with error (called on main thread)"""
+        print(f"Error refreshing pump status: {error_msg}")
+        self.pump_status_label.configure(text='Error', text_color='red')
+    
+    def refresh_keithley_status(self):
+        """Refresh Keithley 2450 SMU connection status (with threading)"""
+        print("DEBUG: Refresh Keithley button clicked")
+        
+        # 1. Update UI immediately (Main Thread)
+        self.keithley_status_label.configure(text="Scanning...", text_color='orange')
+        
+        # 2. Run logic in background thread
+        threading.Thread(target=self._run_refresh_keithley_logic, daemon=True).start()
+    
+    def _run_refresh_keithley_logic(self):
+        """Background thread for Keithley status refresh with re-initialization"""
+        try:
+            # Step A: Check if software object exists
+            # Step B: Active Health Check (performed in get_smu_info())
+            if self.hw_controller.smu is not None and hasattr(self.hw_controller, 'smu'):
+                smu_info = self.hw_controller.get_smu_info()
+                
+                # Step C: If disconnected, attempt re-initialization (re-scan resources)
+                if not smu_info.get('connected', False):
+                    print("[REFRESH] SMU disconnected, attempting re-initialization...")
+                    # Try to auto-detect and reconnect
+                    detected_smu = self.hw_controller.auto_detect_smu()
+                    if detected_smu:
+                        # Close old connection if exists
+                        if self.hw_controller.smu:
+                            try:
+                                self.hw_controller.smu.close()
+                            except:
+                                pass
+                        self.hw_controller.smu = detected_smu
+                        # Re-check status after reconnection
+                        smu_info = self.hw_controller.get_smu_info()
+                        print("[REFRESH] SMU reconnection successful")
+                    else:
+                        print("[REFRESH] SMU reconnection failed - device not found")
+            else:
+                smu_info = {"connected": False, "info": "SMU not available"}
+            
+            # 3. Schedule UI update back on Main Thread
+            self.after(0, lambda: self._update_keithley_ui(smu_info))
+        except Exception as e:
+            error_msg = str(e)
+            self.after(0, lambda: self._update_keithley_error(error_msg))
+    
+    def _update_keithley_ui(self, smu_info):
+        """Update Keithley UI with results (called on main thread)"""
+        try:
+            if smu_info.get('connected', False):
+                self.keithley_status_label.configure(text='✓ Connected', text_color='green')
+            else:
+                self.keithley_status_label.configure(text='✗ Not Connected', text_color='red')
+        except Exception as e:
+            print(f"Error updating Keithley UI: {e}")
+            self.keithley_status_label.configure(text='Error', text_color='red')
+    
+    def _update_keithley_error(self, error_msg):
+        """Update Keithley UI with error (called on main thread)"""
+        print(f"Error refreshing Keithley status: {error_msg}")
+        self.keithley_status_label.configure(text='Error', text_color='red')
+    
+    def on_keithley_mode_change(self):
+        """Handle Keithley measurement mode change"""
+        mode = self.keithley_mode_var.get()
+        self.keithley_mode = mode
+        
+        if mode == "voltage":
+            self.keithley_bias_label.configure(text='Bias Voltage (V):')
+            self.keithley_current_limit_entry.pack(side='left', padx=5)
+            self.keithley_voltage_limit_entry.pack_forget()
+        else:  # current mode
+            self.keithley_bias_label.configure(text='Bias Current (A):')
+            self.keithley_voltage_limit_entry.pack(side='left', padx=5)
+            self.keithley_current_limit_entry.pack_forget()
+    
+    def on_keithley_output_toggle(self):
+        """Handle Keithley output enable/disable toggle"""
+        enabled = self.keithley_output_var.get()
+        self.keithley_output_enabled = enabled
+        
+        if not enabled:
+            # Turn off SMU output
+            try:
+                if self.hw_controller.smu is not None and hasattr(self.hw_controller, 'smu'):
+                    self.hw_controller.stop_smu()
+                    if self.update_queue:
+                        self.update_queue.put(('UPDATE_STATUS', 'SMU output turned OFF'))
+            except Exception as e:
+                print(f"Error turning off SMU: {e}")
+        else:
+            # Setup and enable SMU output based on mode
+            try:
+                if self.hw_controller.smu is not None and hasattr(self.hw_controller, 'smu'):
+                    mode = self.keithley_mode_var.get()
+                    bias_value = float(self.keithley_bias_entry.get())
+                    
+                    if mode == "voltage":
+                        current_limit = float(self.keithley_current_limit_entry.get())
+                        self.hw_controller.setup_smu_for_iv_measurement(current_limit)
+                        self.hw_controller.set_smu_voltage(bias_value, current_limit)
+                    else:  # current mode
+                        voltage_limit = float(self.keithley_voltage_limit_entry.get())
+                        # Setup for current source mode
+                        self.hw_controller.setup_smu_for_current_source(voltage_limit)
+                        self.hw_controller.set_smu_current(bias_value)
+                    
+                    if self.update_queue:
+                        self.update_queue.put(('UPDATE_STATUS', f'SMU output enabled: {bias_value} {"V" if mode == "voltage" else "A"}'))
+            except (ValueError, Exception) as e:
+                print(f"Error enabling SMU: {e}")
+                self.keithley_output_var.set(False)
+                self.keithley_output_enabled = False
+                if self.update_queue:
+                    self.update_queue.put(('UPDATE_STATUS', f'Error enabling SMU: {e}'))
     
     def export_excel(self):
         """Export data to Excel"""
@@ -967,16 +1276,62 @@ class MainTab(BaseTab):
             if self.update_queue:
                 self.update_queue.put(('UPDATE_STATUS', f"Executing step: Duration={duration}s, Flow Rate={flow_rate} ml/min"))
             
-            # Set pump flow rate and start the pump
+            # Set pump flow rate and start the pump (with timeout handling)
             print(f"[EXPERIMENT_THREAD] Setting pump flow rate to {flow_rate} ml/min")
-            self.exp_manager.hw_controller.set_pump_flow_rate(flow_rate)
-            time.sleep(0.3)  # Wait for pump to process flow rate setting
-            print(f"[EXPERIMENT_THREAD] Starting pump...")
-            pump_started = self.exp_manager.hw_controller.start_pump()  # Start the pump
-            print(f"[EXPERIMENT_THREAD] Pump start result: {pump_started}")
-            time.sleep(0.5)  # Wait for pump to actually start running
-            print(f"[EXPERIMENT_THREAD] Setting valves...")
-            self.exp_manager.hw_controller.set_valves(valve_setting['valve1'], valve_setting['valve2'])
+            try:
+                self.exp_manager.hw_controller.set_pump_flow_rate(flow_rate)
+                time.sleep(0.3)  # Wait for pump to process flow rate setting
+                print(f"[EXPERIMENT_THREAD] Starting pump...")
+                pump_started = self.exp_manager.hw_controller.start_pump()  # Start the pump
+                print(f"[EXPERIMENT_THREAD] Pump start result: {pump_started}")
+                time.sleep(0.5)  # Wait for pump to actually start running
+                print(f"[EXPERIMENT_THREAD] Setting valves...")
+                self.exp_manager.hw_controller.set_valves(valve_setting['valve1'], valve_setting['valve2'])
+            except Exception as e:
+                # Catch SerialReadTimeoutException or any other timeout/communication error
+                error_msg = str(e)
+                error_type = type(e).__name__
+                print(f"[EXPERIMENT_THREAD] Pump timeout/error: {error_type}: {error_msg}")
+                
+                # Mark pump as disconnected
+                if hasattr(self.exp_manager.hw_controller.pump, 'connected'):
+                    self.exp_manager.hw_controller.pump.connected = False
+                
+                # Stop the experiment safely
+                if self.update_queue:
+                    self.update_queue.put(('UPDATE_STATUS', 'Experiment stopped: Pump unresponsive'))
+                    self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Stopped: Pump Timeout', 'red')))
+                
+                # Stop experiment manager
+                self.exp_manager.stop_experiment()
+                
+                # Update UI to show pump disconnected
+                self.after(0, lambda: self.pump_status_label.configure(text='✗ Disconnected (Timeout)', text_color='red'))
+                
+                print("[EXPERIMENT_THREAD] Experiment stopped due to pump timeout")
+                return  # Exit the experiment thread
+            
+            # Setup Keithley 2450 if enabled
+            if self.keithley_output_enabled and self.hw_controller.smu is not None:
+                try:
+                    mode = self.keithley_mode_var.get()
+                    bias_value = float(self.keithley_bias_entry.get())
+                    
+                    if mode == "voltage":
+                        current_limit = float(self.keithley_current_limit_entry.get())
+                        print(f"[EXPERIMENT_THREAD] Setting up Keithley: Voltage mode, Bias={bias_value}V, Limit={current_limit}A")
+                        self.hw_controller.setup_smu_for_iv_measurement(current_limit)
+                        self.hw_controller.set_smu_voltage(bias_value, current_limit)
+                    else:  # current mode
+                        voltage_limit = float(self.keithley_voltage_limit_entry.get())
+                        print(f"[EXPERIMENT_THREAD] Setting up Keithley: Current mode, Bias={bias_value}A, Limit={voltage_limit}V")
+                        self.hw_controller.setup_smu_for_current_source(voltage_limit)
+                        self.hw_controller.set_smu_current(bias_value)
+                    
+                    print(f"[EXPERIMENT_THREAD] Keithley 2450 configured and enabled")
+                except (ValueError, Exception) as e:
+                    print(f"[EXPERIMENT_THREAD] Error setting up Keithley: {e}")
+                    self.keithley_output_enabled = False
             
             start_time = time.time()
             print(f"[EXPERIMENT_THREAD] Starting data collection loop...")
@@ -989,25 +1344,96 @@ class MainTab(BaseTab):
                 if not self.exp_manager.perform_safety_checks():
                     break
                 
-                # Check for flow rate updates
+                # Check for flow rate updates (with timeout handling)
                 if self.current_flow_rate != flow_rate:
                     old_flow_rate = flow_rate
                     flow_rate = self.current_flow_rate
-                    self.exp_manager.hw_controller.set_pump_flow_rate(flow_rate)
-                    if self.update_queue:
-                        self.update_queue.put(('UPDATE_STATUS', f'Flow changed during experiment: {old_flow_rate:.2f} → {flow_rate:.2f} ml/min'))
+                    try:
+                        self.exp_manager.hw_controller.set_pump_flow_rate(flow_rate)
+                        if self.update_queue:
+                            self.update_queue.put(('UPDATE_STATUS', f'Flow changed during experiment: {old_flow_rate:.2f} → {flow_rate:.2f} ml/min'))
+                    except Exception as e:
+                        # Catch timeout during flow rate update
+                        error_msg = str(e)
+                        error_type = type(e).__name__
+                        print(f"[EXPERIMENT_THREAD] Pump timeout during flow update: {error_type}: {error_msg}")
+                        
+                        # Mark pump as disconnected
+                        if hasattr(self.exp_manager.hw_controller.pump, 'connected'):
+                            self.exp_manager.hw_controller.pump.connected = False
+                        
+                        # Stop the experiment safely
+                        if self.update_queue:
+                            self.update_queue.put(('UPDATE_STATUS', 'Experiment stopped: Pump unresponsive'))
+                            self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Stopped: Pump Timeout', 'red')))
+                        
+                        # Stop experiment manager
+                        self.exp_manager.stop_experiment()
+                        
+                        # Update UI to show pump disconnected
+                        self.after(0, lambda: self.pump_status_label.configure(text='✗ Disconnected (Timeout)', text_color='red'))
+                        
+                        print("[EXPERIMENT_THREAD] Experiment stopped due to pump timeout")
+                        break  # Exit the loop
                 
                 current_time = time.time()
                 remaining_time = duration - (current_time - start_time)
                 elapsed_time_from_start = current_time - experiment_start_time
                 
-                pump_data = self.exp_manager.hw_controller.read_pump_data()
+                # Read sensor data (with timeout handling for pump)
+                try:
+                    pump_data = self.exp_manager.hw_controller.read_pump_data()
+                except Exception as e:
+                    # Catch timeout when reading pump data
+                    error_msg = str(e)
+                    error_type = type(e).__name__
+                    print(f"[EXPERIMENT_THREAD] Pump timeout during data read: {error_type}: {error_msg}")
+                    
+                    # Mark pump as disconnected
+                    if hasattr(self.exp_manager.hw_controller.pump, 'connected'):
+                        self.exp_manager.hw_controller.pump.connected = False
+                    
+                    # Stop the experiment safely
+                    if self.update_queue:
+                        self.update_queue.put(('UPDATE_STATUS', 'Experiment stopped: Pump unresponsive'))
+                        self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Stopped: Pump Timeout', 'red')))
+                    
+                    # Stop experiment manager
+                    self.exp_manager.stop_experiment()
+                    
+                    # Update UI to show pump disconnected
+                    self.after(0, lambda: self.pump_status_label.configure(text='✗ Disconnected (Timeout)', text_color='red'))
+                    
+                    print("[EXPERIMENT_THREAD] Experiment stopped due to pump timeout")
+                    break  # Exit the loop
+                
                 pressure = self.exp_manager.hw_controller.read_pressure_sensor()
                 temperature = self.exp_manager.hw_controller.read_temperature_sensor()
                 level = self.exp_manager.hw_controller.read_level_sensor()
                 
+                # Read Keithley measurements if enabled
+                keithley_voltage = None
+                keithley_current = None
+                if self.keithley_output_enabled and self.hw_controller.smu is not None:
+                    try:
+                        smu_measurement = self.hw_controller.measure_smu()
+                        if smu_measurement:
+                            keithley_voltage = smu_measurement.get('voltage', None)
+                            keithley_current = smu_measurement.get('current', None)
+                            
+                            # Update display
+                            if keithley_voltage is not None:
+                                self.keithley_voltage_label.configure(text=f'{keithley_voltage:.4f} V')
+                            if keithley_current is not None:
+                                self.keithley_current_label.configure(text=f'{keithley_current:.6f} A')
+                    except Exception as e:
+                        print(f"[EXPERIMENT_THREAD] Error reading Keithley: {e}")
+                
                 if self.update_queue:
-                    self.update_queue.put(('UPDATE_STATUS', f"Running: {remaining_time:.0f}s remaining, Flow={flow_rate}ml/min"))
+                    status_msg = f"Running: {remaining_time:.0f}s remaining, Flow={flow_rate}ml/min"
+                    if keithley_voltage is not None:
+                        status_msg += f", V={keithley_voltage:.3f}V, I={keithley_current:.6f}A"
+                    self.update_queue.put(('UPDATE_STATUS', status_msg))
                 
                 # Update data arrays (thread-safe with lock - BUG FIX #1)
                 with self.data_lock:
@@ -1016,17 +1442,36 @@ class MainTab(BaseTab):
                     self.pressure_x_data.append(elapsed_time_from_start)
                     self.pressure_y_data.append(pressure)
                     self.temp_x_data.append(elapsed_time_from_start)
-                    self.temp_y_data.append(temperature)
+                    # Append temperature (or NaN if sensor disconnected)
+                    if temperature is not None:
+                        self.temp_y_data.append(temperature)
+                    else:
+                        # Use NaN to show gaps in graph when sensor is disconnected
+                        self.temp_y_data.append(float('nan'))
                     self.level_x_data.append(elapsed_time_from_start)
                     self.level_y_data.append(level * 100)
+                    
+                    # Store Keithley data for graphing (synchronized with time)
+                    self.keithley_time_data.append(elapsed_time_from_start)
+                    if keithley_voltage is not None:
+                        self.keithley_voltage_data.append(keithley_voltage)
+                    else:
+                        self.keithley_voltage_data.append(0.0)
+                    if keithley_current is not None:
+                        self.keithley_current_data.append(keithley_current)
+                    else:
+                        self.keithley_current_data.append(0.0)
                 
                 data_point = {
                     "time": elapsed_time_from_start,
                     "flow_setpoint": self.current_flow_rate,
                     "pump_flow_read": pump_data['flow'],
                     "pressure_read": pressure,
-                    "temp_read": temperature,
-                    "level_read": level
+                    "temp_read": temperature if temperature is not None else "",
+                    "level_read": level,
+                    "voltage": keithley_voltage if keithley_voltage is not None else "",
+                    "current": keithley_current if keithley_current is not None else "",
+                    "target_voltage": float(self.keithley_bias_entry.get()) if self.keithley_output_enabled else ""
                 }
                 
                 self.data_handler.append_data(data_point)
@@ -1059,6 +1504,15 @@ class MainTab(BaseTab):
         
         # Stop the pump when experiment ends
         self.exp_manager.hw_controller.stop_pump()
+        
+        # Stop Keithley if enabled
+        if self.keithley_output_enabled and self.hw_controller.smu is not None:
+            try:
+                self.hw_controller.stop_smu()
+                print(f"[EXPERIMENT_THREAD] Keithley stopped")
+            except Exception as e:
+                print(f"[EXPERIMENT_THREAD] Error stopping Keithley: {e}")
+        
         self.exp_manager.stop_experiment()
         
         # Update last total time (thread-safe - BUG FIX #1)

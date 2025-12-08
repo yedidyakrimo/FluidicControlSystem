@@ -30,6 +30,9 @@ class IVTab(BaseTab):
         # Temperature sensor channel (ai1 is already used for temperature in hardware_controller)
         self.temp_sensor_channel = 'ai1'  # Using ai1 which is the temperature sensor channel
         
+        # Rate limiting for error messages (print only every 10 seconds)
+        self.last_temp_error_print_time = {}
+        
         # Create widgets
         self.create_widgets()
         
@@ -461,9 +464,22 @@ class IVTab(BaseTab):
     
     # --- SMU Control Functions ---
     def detect_smu(self):
-        """Detect and connect to Keithley 2450 SMU automatically"""
+        """Detect and connect to Keithley 2450 SMU automatically (with threading)"""
+        print("DEBUG: Detect SMU button clicked")
+        
+        # 1. Update UI immediately (Main Thread)
+        self.smu_status_label.configure(text="Scanning for devices...", text_color='orange')
+        
+        # 2. Run logic in background thread
+        threading.Thread(target=self._run_detect_smu_logic, daemon=True).start()
+    
+    def _run_detect_smu_logic(self):
+        """Background thread for SMU detection"""
         try:
+            # Heavy VISA operations here (this can take several seconds)
             detected_smu = self.hw_controller.auto_detect_smu()
+            
+            # 3. Schedule UI update back on Main Thread
             if detected_smu:
                 if self.hw_controller.smu:
                     try:
@@ -471,17 +487,63 @@ class IVTab(BaseTab):
                     except:
                         pass
                 self.hw_controller.smu = detected_smu
-                messagebox.showinfo('Success', f'Keithley 2450 SMU detected and connected!\nResource: {detected_smu.resource_name}')
-                self.refresh_smu_status()
+                self.after(0, lambda: messagebox.showinfo('Success', 
+                    f'Keithley 2450 SMU detected and connected!\nResource: {detected_smu.resource_name}'))
+                self.after(0, self.refresh_smu_status)
             else:
-                messagebox.showwarning('Not Found', 'Keithley 2450 SMU not found. Please check:\n1. Device is powered on\n2. USB cable is connected\n3. VISA drivers are installed')
+                self.after(0, lambda: messagebox.showwarning('Not Found', 
+                    'Keithley 2450 SMU not found. Please check:\n1. Device is powered on\n2. USB cable is connected\n3. VISA drivers are installed'))
+                self.after(0, lambda: self.smu_status_label.configure(text='✗ Not Connected', text_color='red'))
         except Exception as e:
-            messagebox.showerror('Error', f'Error detecting SMU: {e}')
+            error_msg = str(e)
+            self.after(0, lambda: messagebox.showerror('Error', f'Error detecting SMU: {error_msg}'))
+            self.after(0, lambda: self.smu_status_label.configure(text='✗ Not Connected', text_color='red'))
     
     def refresh_smu_status(self):
-        """Refresh SMU connection status display"""
+        """Refresh SMU connection status display (with threading)"""
+        print("DEBUG: Refresh SMU button clicked")
+        
+        # 1. Update UI immediately (Main Thread)
+        self.smu_status_label.configure(text="Checking...", text_color='orange')
+        
+        # 2. Run logic in background thread
+        threading.Thread(target=self._run_refresh_smu_logic, daemon=True).start()
+    
+    def _run_refresh_smu_logic(self):
+        """Background thread for SMU status refresh with re-initialization"""
         try:
+            # Step A: Check if software object exists
+            # Step B: Active Health Check (performed in get_smu_info())
             smu_info = self.hw_controller.get_smu_info()
+            
+            # Step C: If disconnected, attempt re-initialization (re-scan resources)
+            if not smu_info.get('connected', False):
+                print("[REFRESH] SMU disconnected, attempting re-initialization...")
+                # Try to auto-detect and reconnect
+                detected_smu = self.hw_controller.auto_detect_smu()
+                if detected_smu:
+                    # Close old connection if exists
+                    if self.hw_controller.smu:
+                        try:
+                            self.hw_controller.smu.close()
+                        except:
+                            pass
+                    self.hw_controller.smu = detected_smu
+                    # Re-check status after reconnection
+                    smu_info = self.hw_controller.get_smu_info()
+                    print("[REFRESH] SMU reconnection successful")
+                else:
+                    print("[REFRESH] SMU reconnection failed - device not found")
+            
+            # 3. Schedule UI update back on Main Thread
+            self.after(0, lambda: self._update_smu_ui(smu_info))
+        except Exception as e:
+            error_msg = str(e)
+            self.after(0, lambda: self._update_smu_error(error_msg))
+    
+    def _update_smu_ui(self, smu_info):
+        """Update SMU UI with results (called on main thread)"""
+        try:
             if smu_info.get('connected', False):
                 self.smu_status_label.configure(text='✓ Connected', text_color='green')
                 self.smu_idn_label.configure(text=smu_info.get('idn', 'N/A'))
@@ -493,13 +555,41 @@ class IVTab(BaseTab):
         except Exception as e:
             self.smu_status_label.configure(text=f'Error: {str(e)[:30]}', text_color='orange')
     
+    def _update_smu_error(self, error_msg):
+        """Update SMU UI with error (called on main thread)"""
+        self.smu_status_label.configure(text=f'Error: {error_msg[:30]}', text_color='orange')
+    
     def refresh_mcusb_status(self):
-        """Refresh MCusb-1408FS-Plus connection status display"""
+        """Refresh MCusb-1408FS-Plus connection status display (with threading)"""
+        print("DEBUG: Refresh MCusb button clicked")
+        
+        # 1. Update UI immediately (Main Thread)
+        self.mcusb_status_label.configure(text="Checking...", text_color='orange')
+        
+        # 2. Run logic in background thread
+        threading.Thread(target=self._run_refresh_mcusb_logic, daemon=True).start()
+    
+    def _run_refresh_mcusb_logic(self):
+        """Background thread for MCusb status refresh"""
         try:
-            if self.hw_controller.ni_daq and self.hw_controller.ni_daq.is_connected():
+            # Check connection status
+            is_connected = (self.hw_controller.ni_daq and 
+                           self.hw_controller.ni_daq.is_connected())
+            device_name = self.hw_controller.ni_device_name if is_connected else 'N/A'
+            
+            # 3. Schedule UI update back on Main Thread
+            self.after(0, lambda: self._update_mcusb_ui(is_connected, device_name))
+        except Exception as e:
+            error_msg = str(e)
+            self.after(0, lambda: self._update_mcusb_error(error_msg))
+    
+    def _update_mcusb_ui(self, is_connected, device_name):
+        """Update MCusb UI with results (called on main thread)"""
+        try:
+            if is_connected:
                 self.mcusb_status_label.configure(text='Connected', text_color='green')
-                self.mcusb_device_label.configure(text=self.hw_controller.ni_device_name)
-                # Read channels
+                self.mcusb_device_label.configure(text=device_name)
+                # Read channels (this is quick, can stay on main thread)
                 self.read_mcusb_channels()
             else:
                 self.mcusb_status_label.configure(text='Not Connected', text_color='red')
@@ -507,6 +597,10 @@ class IVTab(BaseTab):
                 self.mcusb_ch0_label.configure(text='N/A')
         except Exception as e:
             self.mcusb_status_label.configure(text=f'Error: {str(e)[:30]}', text_color='orange')
+    
+    def _update_mcusb_error(self, error_msg):
+        """Update MCusb UI with error (called on main thread)"""
+        self.mcusb_status_label.configure(text=f'Error: {error_msg[:30]}', text_color='orange')
     
     def read_mcusb_channels(self):
         """Read voltage from MCusb-1408FS-Plus channels"""
@@ -530,11 +624,43 @@ class IVTab(BaseTab):
         except Exception as e:
             messagebox.showerror('Error', f'Error reading MCusb channels: {e}')
     
+    def _should_print_temp_error(self, error_key, interval_seconds=10):
+        """
+        Check if enough time has passed since last error print
+        
+        Args:
+            error_key: Unique key for this error type
+            interval_seconds: Minimum seconds between prints (default 10)
+        
+        Returns:
+            True if should print, False otherwise
+        """
+        import time
+        current_time = time.time()
+        if error_key not in self.last_temp_error_print_time:
+            self.last_temp_error_print_time[error_key] = current_time
+            return True
+        
+        if current_time - self.last_temp_error_print_time[error_key] >= interval_seconds:
+            self.last_temp_error_print_time[error_key] = current_time
+            return True
+        
+        return False
+    
     def read_temperature_sensor(self):
         """
-        Read temperature from USB1408 analog input channel ai1
-        Formula: V = 2 + (8/150) * T
-        Therefore: T = (V - 2) * (150/8) = (V - 2) * 18.75
+        Read temperature from 4-20mA temperature transmitter via MCusb-1408FS-Plus
+        Uses 556 Ohm shunt resistor to convert current to voltage
+        
+        Hardware:
+        - Sensor Range: 0°C to 150°C
+        - Current Output: 4mA (at 0°C) to 20mA (at 150°C)
+        - Shunt Resistor: 556 Ohms
+        - Input: Voltage across shunt resistor
+        
+        Formula:
+        1. Current (mA) = Voltage / 556 * 1000
+        2. Temperature (°C) = (Current_mA - 4) * (150 / 16)
         """
         try:
             if not self.hw_controller.ni_daq or not self.hw_controller.ni_daq.is_connected():
@@ -546,12 +672,32 @@ class IVTab(BaseTab):
             if voltage is None:
                 return None, None
             
-            # Calculate temperature: T = (V - 2) * 18.75
-            temperature = (voltage - 2.0) * 18.75
+            # Use the temperature sensor's calibration function
+            if hasattr(self.hw_controller, 'temperature_sensor') and hasattr(self.hw_controller.temperature_sensor, 'calculate_temperature_from_voltage'):
+                temperature = self.hw_controller.temperature_sensor.calculate_temperature_from_voltage(voltage)
+            else:
+                # Fallback: Direct calculation using exact formula
+                # Step 1: Calculate Current (mA)
+                # Formula: current_mA = (voltage / 556.0) * 1000.0
+                current_mA = (voltage / 556.0) * 1000.0
+                
+                # Step 2: Check for disconnected sensor
+                if current_mA < 3.5:
+                    if self._should_print_temp_error("sensor_disconnected"):
+                        print(f"Warning: Temperature sensor appears disconnected. Current: {current_mA:.3f}mA")
+                    return voltage, None
+                
+                # Step 3: Calculate Temperature (°C)
+                # Formula: temp_c = (current_mA - 4.0) * (150.0 / 16.0)
+                temp_c = (current_mA - 4.0) * (150.0 / 16.0)
+                
+                # Clamp temperature to valid range (0-150°C)
+                temperature = max(0.0, min(150.0, temp_c))
             
             return voltage, temperature
         except Exception as e:
-            print(f"Error reading temperature sensor: {e}")
+            if self._should_print_temp_error("read_exception"):
+                print(f"Error reading temperature sensor: {e}")
             return None, None
     
     def update_mcusb_readings(self):
@@ -572,9 +718,12 @@ class IVTab(BaseTab):
                 
                 # Read temperature sensor (ai1)
                 temp_voltage, temperature = self.read_temperature_sensor()
-                if temp_voltage is not None and temperature is not None:
+                if temp_voltage is not None:
                     self.temp_voltage_label.configure(text=f'{temp_voltage:.4f} V', text_color='green')
-                    self.temp_display_label.configure(text=f'{temperature:.2f} °C', text_color='green')
+                    if temperature is not None:
+                        self.temp_display_label.configure(text=f'{temperature:.2f} °C', text_color='green')
+                    else:
+                        self.temp_display_label.configure(text='Sensor Disconnected', text_color='red')
                 else:
                     self.temp_voltage_label.configure(text='Error', text_color='red')
                     self.temp_display_label.configure(text='Error', text_color='red')
@@ -585,16 +734,29 @@ class IVTab(BaseTab):
         self.after(100, self.update_mcusb_readings)
     
     def list_visa_devices(self):
-        """List all available VISA devices"""
+        """List all available VISA devices (with threading)"""
+        print("DEBUG: List VISA devices button clicked")
+        
+        # 1. Show loading message immediately (Main Thread)
+        messagebox.showinfo('Scanning', 'Scanning for VISA devices...\nThis may take a few seconds.')
+        
+        # 2. Run logic in background thread
+        threading.Thread(target=self._run_list_visa_devices_logic, daemon=True).start()
+    
+    def _run_list_visa_devices_logic(self):
+        """Background thread for listing VISA devices"""
         try:
+            # Heavy VISA operations here (this can take several seconds)
             resources = self.hw_controller.list_visa_resources()
+            
             if resources:
                 device_list = "Available VISA Devices:\n\n"
                 for i, resource in enumerate(resources, 1):
                     device_list += f"{i}. {resource}\n"
                     try:
-                        if self.hw_controller.rm:
-                            inst = self.hw_controller.rm.open_resource(resource)
+                        # Access ResourceManager through SMU object
+                        if self.hw_controller.smu and hasattr(self.hw_controller.smu, 'rm') and self.hw_controller.smu.rm:
+                            inst = self.hw_controller.smu.rm.open_resource(resource)
                             inst.timeout = 2000
                             idn = inst.query("*IDN?")
                             device_list += f"   IDN: {idn.strip()}\n"
@@ -602,11 +764,14 @@ class IVTab(BaseTab):
                     except:
                         device_list += "   (Could not query device)\n"
                     device_list += "\n"
-                messagebox.showinfo('VISA Devices', device_list)
+                
+                # 3. Schedule UI update back on Main Thread
+                self.after(0, lambda: messagebox.showinfo('VISA Devices', device_list))
             else:
-                messagebox.showinfo('VISA Devices', 'No VISA devices found.')
+                self.after(0, lambda: messagebox.showinfo('VISA Devices', 'No VISA devices found.'))
         except Exception as e:
-            messagebox.showerror('Error', f'Error listing VISA devices: {e}')
+            error_msg = str(e)
+            self.after(0, lambda: messagebox.showerror('Error', f'Error listing VISA devices: {error_msg}'))
     
     def set_smu_voltage_manual(self):
         """Set SMU voltage manually"""
