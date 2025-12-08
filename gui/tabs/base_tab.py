@@ -3,6 +3,7 @@ Base class for all GUI tabs
 """
 
 import customtkinter as ctk
+import threading
 
 
 class BaseTab(ctk.CTkFrame):
@@ -33,6 +34,19 @@ class BaseTab(ctk.CTkFrame):
         self.pressure_x_data, self.pressure_y_data = [], []
         self.temp_x_data, self.temp_y_data = [], []
         self.level_x_data, self.level_y_data = [], []
+        
+        # Lock for thread-safe access to data arrays (BUG FIX #1: Race Conditions)
+        self.data_lock = threading.Lock()
+
+        # Shared button style
+        self.BLUE_BUTTON_FG = '#1E88E5'
+        self.BLUE_BUTTON_HOVER = '#1565C0'
+    
+    def create_blue_button(self, parent, **kwargs):
+        """Helper that applies the standardized blue button palette."""
+        kwargs.setdefault('fg_color', self.BLUE_BUTTON_FG)
+        kwargs.setdefault('hover_color', self.BLUE_BUTTON_HOVER)
+        return ctk.CTkButton(parent, **kwargs)
     
     def create_widgets(self):
         """

@@ -37,6 +37,9 @@ class MainTab(BaseTab):
         
         # Setup graphs
         self.setup_graphs()
+        
+        # Refresh pump status on startup
+        self.after(500, self.refresh_pump_status)
     
     def create_widgets(self):
         """Create Main tab widgets"""
@@ -52,6 +55,35 @@ class MainTab(BaseTab):
         left_frame = ctk.CTkScrollableFrame(left_container, width=400)
         left_frame.pack(fill='both', expand=True)
         
+        # Pump Connection Status
+        pump_status_frame = ctk.CTkFrame(left_frame)
+        pump_status_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(pump_status_frame, text="Vapourtec SF-10 Pump Status", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        pump_info_frame = ctk.CTkFrame(pump_status_frame)
+        pump_info_frame.pack(fill='x', padx=5, pady=5)
+        
+        ctk.CTkLabel(pump_info_frame, text='Status:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+        self.pump_status_label = ctk.CTkLabel(pump_info_frame, text='Checking...', width=250, anchor='w')
+        self.pump_status_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
+        
+        ctk.CTkLabel(pump_info_frame, text='Port:', width=100).grid(row=1, column=0, padx=5, pady=2, sticky='w')
+        self.pump_port_label = ctk.CTkLabel(pump_info_frame, text='N/A', width=250, anchor='w')
+        self.pump_port_label.grid(row=1, column=1, padx=5, pady=2, sticky='w')
+        
+        ctk.CTkLabel(pump_info_frame, text='Flow Rate:', width=100).grid(row=2, column=0, padx=5, pady=2, sticky='w')
+        self.pump_flow_label = ctk.CTkLabel(pump_info_frame, text='N/A', width=250, anchor='w')
+        self.pump_flow_label.grid(row=2, column=1, padx=5, pady=2, sticky='w')
+        
+        ctk.CTkLabel(pump_info_frame, text='Max Flow:', width=100).grid(row=3, column=0, padx=5, pady=2, sticky='w')
+        self.pump_max_flow_label = ctk.CTkLabel(pump_info_frame, text='5.0 ml/min', width=250, anchor='w', text_color='gray')
+        self.pump_max_flow_label.grid(row=3, column=1, padx=5, pady=2, sticky='w')
+        
+        # Control buttons
+        pump_btn_frame = ctk.CTkFrame(pump_status_frame)
+        pump_btn_frame.pack(pady=5)
+        self.create_blue_button(pump_btn_frame, text='🔄 Refresh Status', command=self.refresh_pump_status, width=120, height=30).pack(side='left', padx=2)
+        
         # Experiment Parameters
         exp_frame = ctk.CTkFrame(left_frame)
         exp_frame.pack(fill='x', pady=5)
@@ -63,6 +95,7 @@ class MainTab(BaseTab):
         self.flow_rate_entry = ctk.CTkEntry(flow_frame, width=100)
         self.flow_rate_entry.insert(0, '1.5')
         self.flow_rate_entry.pack(side='left', padx=5)
+        ctk.CTkLabel(flow_frame, text='(Max: 5.0)', width=80, font=('Helvetica', 9), text_color='gray').pack(side='left', padx=2)
         
         duration_frame = ctk.CTkFrame(exp_frame)
         duration_frame.pack(fill='x', padx=5, pady=2)
@@ -117,39 +150,39 @@ class MainTab(BaseTab):
         control_frame.pack(fill='x', pady=5)
         ctk.CTkLabel(control_frame, text="Control", font=('Helvetica', 14, 'bold')).pack(pady=5)
         
-        self.start_btn = ctk.CTkButton(control_frame, text='Start Recording', 
-                                       command=self.start_recording, fg_color='green', width=150, height=40)
+        self.start_btn = self.create_blue_button(control_frame, text='Start Recording',
+                                                 command=self.start_recording, width=150, height=40)
         self.start_btn.pack(pady=2)
         
-        self.stop_btn = ctk.CTkButton(control_frame, text='Stop Recording', 
-                                      command=self.stop_recording, fg_color='red', width=150, height=40)
+        self.stop_btn = self.create_blue_button(control_frame, text='Stop Recording',
+                                                command=self.stop_recording, width=150, height=40,
+                                                fg_color='#0D47A1', hover_color='#0C3A7A')
         self.stop_btn.pack(pady=2)
         
-        self.finish_btn = ctk.CTkButton(control_frame, text='Finish Recording', 
-                                        command=self.finish_recording, fg_color='orange', width=150, height=40)
+        self.finish_btn = self.create_blue_button(control_frame, text='Finish Recording',
+                                                  command=self.finish_recording, width=150, height=40,
+                                                  fg_color='#0C6CC0', hover_color='#0A518A')
         self.finish_btn.pack(pady=2)
         
-        self.update_flow_btn = ctk.CTkButton(control_frame, text='Update Flow', 
-                                            command=self.update_flow, fg_color='purple', width=150)
+        self.update_flow_btn = self.create_blue_button(control_frame, text='Update Flow',
+                                                      command=self.update_flow, width=150)
         self.update_flow_btn.pack(pady=2)
         
-        self.clear_graph_btn = ctk.CTkButton(control_frame, text='Clear Graph', 
-                                             command=self.clear_graph, fg_color='gray', width=150)
+        self.clear_graph_btn = self.create_blue_button(control_frame, text='Clear Graph',
+                                                       command=self.clear_graph, width=150)
         self.clear_graph_btn.pack(pady=2)
         
         export_menu_frame = ctk.CTkFrame(control_frame)
         export_menu_frame.pack(pady=2)
         
         ctk.CTkLabel(export_menu_frame, text='Export:', width=80).pack(side='left', padx=5)
-        self.export_btn = ctk.CTkButton(export_menu_frame, text='Excel', 
-                                       command=self.export_excel, fg_color='blue', width=100)
+        self.export_btn = self.create_blue_button(export_menu_frame, text='Excel',
+                                                 command=self.export_excel, width=100)
         self.export_btn.pack(side='left', padx=2)
         
-        ctk.CTkButton(export_menu_frame, text='PNG', 
-                     command=self.export_graph_png, fg_color='green', width=100).pack(side='left', padx=2)
+        self.create_blue_button(export_menu_frame, text='PNG', command=self.export_graph_png, width=100).pack(side='left', padx=2)
         
-        ctk.CTkButton(export_menu_frame, text='PDF', 
-                     command=self.export_graph_pdf, fg_color='red', width=100).pack(side='left', padx=2)
+        self.create_blue_button(export_menu_frame, text='PDF', command=self.export_graph_pdf, width=100).pack(side='left', padx=2)
         
         # Current Readings
         readings_frame = ctk.CTkFrame(left_frame)
@@ -344,10 +377,26 @@ class MainTab(BaseTab):
     
     def update_multi_panel_graphs(self):
         """Update all 4 graphs in multi-panel view"""
+        # BUG FIX #1 & #4: Thread-safe access with lock and make copies
+        with self.data_lock:
+            flow_x_copy = list(self.flow_x_data) if self.flow_x_data else []
+            flow_y_copy = list(self.flow_y_data) if self.flow_y_data else []
+            pressure_x_copy = list(self.pressure_x_data) if self.pressure_x_data else []
+            pressure_y_copy = list(self.pressure_y_data) if self.pressure_y_data else []
+            temp_x_copy = list(self.temp_x_data) if self.temp_x_data else []
+            temp_y_copy = list(self.temp_y_data) if self.temp_y_data else []
+            level_x_copy = list(self.level_x_data) if self.level_x_data else []
+            level_y_copy = list(self.level_y_data) if self.level_y_data else []
+        
         # Flow graph
         self.flow_ax.clear()
-        if len(self.flow_x_data) > 0 and len(self.flow_y_data) > 0:
-            self.flow_ax.plot(self.flow_x_data, self.flow_y_data, color='#2E86AB', linewidth=2, alpha=0.85)
+        if len(flow_x_copy) > 0 and len(flow_y_copy) > 0:
+            min_len = min(len(flow_x_copy), len(flow_y_copy))
+            self.flow_ax.plot(flow_x_copy[:min_len], flow_y_copy[:min_len], color='#2E86AB', linewidth=2, alpha=0.85)
+            # Auto-scale axes
+            if min_len > 0:
+                self.flow_ax.relim()
+                self.flow_ax.autoscale()
         self.flow_ax.set_xlabel("Time (s)", color='black', fontsize=10)
         self.flow_ax.set_ylabel("Flow Rate (ml/min)", color='black', fontsize=10)
         self.flow_ax.set_title("Flow Rate", color='black', fontsize=12, fontweight='bold', pad=10)
@@ -356,8 +405,13 @@ class MainTab(BaseTab):
         
         # Pressure graph
         self.pressure_ax.clear()
-        if len(self.pressure_x_data) > 0 and len(self.pressure_y_data) > 0:
-            self.pressure_ax.plot(self.pressure_x_data, self.pressure_y_data, color='#A23B72', linewidth=2, alpha=0.85)
+        if len(pressure_x_copy) > 0 and len(pressure_y_copy) > 0:
+            min_len = min(len(pressure_x_copy), len(pressure_y_copy))
+            self.pressure_ax.plot(pressure_x_copy[:min_len], pressure_y_copy[:min_len], color='#A23B72', linewidth=2, alpha=0.85)
+            # Auto-scale axes
+            if min_len > 0:
+                self.pressure_ax.relim()
+                self.pressure_ax.autoscale()
         self.pressure_ax.set_xlabel("Time (s)", color='black', fontsize=10)
         self.pressure_ax.set_ylabel("Pressure (PSI)", color='black', fontsize=10)
         self.pressure_ax.set_title("Pressure", color='black', fontsize=12, fontweight='bold', pad=10)
@@ -366,8 +420,13 @@ class MainTab(BaseTab):
         
         # Temperature graph
         self.temp_ax.clear()
-        if len(self.temp_x_data) > 0 and len(self.temp_y_data) > 0:
-            self.temp_ax.plot(self.temp_x_data, self.temp_y_data, color='#F18F01', linewidth=2, alpha=0.85)
+        if len(temp_x_copy) > 0 and len(temp_y_copy) > 0:
+            min_len = min(len(temp_x_copy), len(temp_y_copy))
+            self.temp_ax.plot(temp_x_copy[:min_len], temp_y_copy[:min_len], color='#F18F01', linewidth=2, alpha=0.85)
+            # Auto-scale axes
+            if min_len > 0:
+                self.temp_ax.relim()
+                self.temp_ax.autoscale()
         self.temp_ax.set_xlabel("Time (s)", color='black', fontsize=10)
         self.temp_ax.set_ylabel("Temperature (°C)", color='black', fontsize=10)
         self.temp_ax.set_title("Temperature", color='black', fontsize=12, fontweight='bold', pad=10)
@@ -376,8 +435,13 @@ class MainTab(BaseTab):
         
         # Level graph
         self.level_ax.clear()
-        if len(self.level_x_data) > 0 and len(self.level_y_data) > 0:
-            self.level_ax.plot(self.level_x_data, self.level_y_data, color='#06A77D', linewidth=2, alpha=0.85)
+        if len(level_x_copy) > 0 and len(level_y_copy) > 0:
+            min_len = min(len(level_x_copy), len(level_y_copy))
+            self.level_ax.plot(level_x_copy[:min_len], level_y_copy[:min_len], color='#06A77D', linewidth=2, alpha=0.85)
+            # Auto-scale axes
+            if min_len > 0:
+                self.level_ax.relim()
+                self.level_ax.autoscale()
         self.level_ax.set_xlabel("Time (s)", color='black', fontsize=10)
         self.level_ax.set_ylabel("Level (%)", color='black', fontsize=10)
         self.level_ax.set_title("Liquid Level", color='black', fontsize=12, fontweight='bold', pad=10)
@@ -405,21 +469,68 @@ class MainTab(BaseTab):
         """Plot X vs Y with any combination of parameters"""
         self.main_ax.clear()
         
-        # Get the appropriate data arrays based on selected axes
-        param_arrays = {
-            'Time': self.flow_x_data,
-            'Flow Rate': self.flow_y_data,
-            'Pressure': self.pressure_y_data,
-            'Temperature': self.temp_y_data,
-            'Level': self.level_y_data
-        }
+        # BUG FIX #1 & #4: Thread-safe access with lock and make copies
+        with self.data_lock:
+            flow_x_copy = list(self.flow_x_data) if self.flow_x_data else []
+            flow_y_copy = list(self.flow_y_data) if self.flow_y_data else []
+            pressure_x_copy = list(self.pressure_x_data) if self.pressure_x_data else []
+            pressure_y_copy = list(self.pressure_y_data) if self.pressure_y_data else []
+            temp_x_copy = list(self.temp_x_data) if self.temp_x_data else []
+            temp_y_copy = list(self.temp_y_data) if self.temp_y_data else []
+            level_x_copy = list(self.level_x_data) if self.level_x_data else []
+            level_y_copy = list(self.level_y_data) if self.level_y_data else []
         
-        if x_axis_type in param_arrays and y_axis_type in param_arrays:
-            x_param = param_arrays[x_axis_type]
-            y_param = param_arrays[y_axis_type]
-        else:
-            x_param = x_data if x_data else []
-            y_param = y_data if y_data else []
+        # Get the appropriate data arrays based on selected axes
+        # For X-axis: Time uses flow_x_data (or any time array), other params use their Y data
+        # For Y-axis: use the corresponding Y data array
+        x_param = []
+        y_param = []
+        
+        if x_axis_type == 'Time':
+            # Use time from any available data array (they should all have the same time)
+            if len(flow_x_copy) > 0:
+                x_param = flow_x_copy
+            elif len(pressure_x_copy) > 0:
+                x_param = pressure_x_copy
+            elif len(temp_x_copy) > 0:
+                x_param = temp_x_copy
+            elif len(level_x_copy) > 0:
+                x_param = level_x_copy
+        elif x_axis_type == 'Flow Rate':
+            x_param = flow_y_copy
+        elif x_axis_type == 'Pressure':
+            x_param = pressure_y_copy
+        elif x_axis_type == 'Temperature':
+            x_param = temp_y_copy
+        elif x_axis_type == 'Level':
+            x_param = level_y_copy
+        
+        if y_axis_type == 'Flow Rate':
+            y_param = flow_y_copy
+        elif y_axis_type == 'Pressure':
+            y_param = pressure_y_copy
+        elif y_axis_type == 'Temperature':
+            y_param = temp_y_copy
+        elif y_axis_type == 'Level':
+            y_param = level_y_copy
+        
+        # If X is Time, make sure we use the correct time array that matches the Y data
+        if x_axis_type == 'Time' and len(y_param) > 0:
+            # Use the time array that corresponds to the Y-axis data
+            if y_axis_type == 'Flow Rate' and len(flow_x_copy) > 0:
+                x_param = flow_x_copy
+            elif y_axis_type == 'Pressure' and len(pressure_x_copy) > 0:
+                x_param = pressure_x_copy
+            elif y_axis_type == 'Temperature' and len(temp_x_copy) > 0:
+                x_param = temp_x_copy
+            elif y_axis_type == 'Level' and len(level_x_copy) > 0:
+                x_param = level_x_copy
+        
+        # If we have x_data and y_data passed in, use those instead (override above)
+        if len(x_data) > 0:
+            x_param = x_data
+        if len(y_data) > 0:
+            y_param = y_data
         
         # Define styles for each parameter
         styles = {
@@ -433,13 +544,12 @@ class MainTab(BaseTab):
         x_style = styles.get(x_axis_type, {'ylabel': x_axis_type, 'unit': ''})
         y_style = styles.get(y_axis_type, {'ylabel': y_axis_type, 'unit': ''})
         
-        # Use the data from param_arrays or fallback
+        # Use the data we extracted or fallback to demo data
         if len(x_param) > 0 and len(y_param) > 0:
-            x_plot = list(x_param)
-            y_plot = list(y_param)
-        elif len(x_data) > 0 and len(y_data) > 0:
-            x_plot = x_data
-            y_plot = y_data
+            # Make sure arrays are the same length
+            min_len = min(len(x_param), len(y_param))
+            x_plot = list(x_param[:min_len])
+            y_plot = list(y_param[:min_len])
         else:
             # Generate demo data - clean sine waves
             x_demo = np.linspace(0, 60, 200)
@@ -490,42 +600,50 @@ class MainTab(BaseTab):
     def update_statistics(self):
         """Calculate and update real-time statistics"""
         try:
-            # Flow statistics
-            if len(self.flow_y_data) > 0:
-                flow_mean = np.mean(self.flow_y_data)
-                flow_std = np.std(self.flow_y_data)
-                flow_min = np.min(self.flow_y_data)
-                flow_max = np.max(self.flow_y_data)
+            # BUG FIX #4: Thread-safe access with lock and length validation
+            with self.data_lock:
+                # Flow statistics
+                flow_y_copy = list(self.flow_y_data) if self.flow_y_data else []
+                pressure_y_copy = list(self.pressure_y_data) if self.pressure_y_data else []
+                temp_y_copy = list(self.temp_y_data) if self.temp_y_data else []
+                level_y_copy = list(self.level_y_data) if self.level_y_data else []
+            
+            # Calculate statistics on copies to avoid race conditions
+            if len(flow_y_copy) > 0:
+                flow_mean = np.mean(flow_y_copy)
+                flow_std = np.std(flow_y_copy)
+                flow_min = np.min(flow_y_copy)
+                flow_max = np.max(flow_y_copy)
                 self.flow_stats_label.configure(text=f'Mean: {flow_mean:.2f} | Std: {flow_std:.2f} | Range: [{flow_min:.2f}, {flow_max:.2f}]')
             else:
                 self.flow_stats_label.configure(text='Mean: N/A | Std: N/A')
             
             # Pressure statistics
-            if len(self.pressure_y_data) > 0:
-                pressure_mean = np.mean(self.pressure_y_data)
-                pressure_std = np.std(self.pressure_y_data)
-                pressure_min = np.min(self.pressure_y_data)
-                pressure_max = np.max(self.pressure_y_data)
+            if len(pressure_y_copy) > 0:
+                pressure_mean = np.mean(pressure_y_copy)
+                pressure_std = np.std(pressure_y_copy)
+                pressure_min = np.min(pressure_y_copy)
+                pressure_max = np.max(pressure_y_copy)
                 self.pressure_stats_label.configure(text=f'Mean: {pressure_mean:.2f} | Std: {pressure_std:.2f} | Range: [{pressure_min:.2f}, {pressure_max:.2f}]')
             else:
                 self.pressure_stats_label.configure(text='Mean: N/A | Std: N/A')
             
             # Temperature statistics
-            if len(self.temp_y_data) > 0:
-                temp_mean = np.mean(self.temp_y_data)
-                temp_std = np.std(self.temp_y_data)
-                temp_min = np.min(self.temp_y_data)
-                temp_max = np.max(self.temp_y_data)
+            if len(temp_y_copy) > 0:
+                temp_mean = np.mean(temp_y_copy)
+                temp_std = np.std(temp_y_copy)
+                temp_min = np.min(temp_y_copy)
+                temp_max = np.max(temp_y_copy)
                 self.temp_stats_label.configure(text=f'Mean: {temp_mean:.2f} | Std: {temp_std:.2f} | Range: [{temp_min:.2f}, {temp_max:.2f}]')
             else:
                 self.temp_stats_label.configure(text='Mean: N/A | Std: N/A')
             
             # Level statistics
-            if len(self.level_y_data) > 0:
-                level_mean = np.mean(self.level_y_data)
-                level_std = np.std(self.level_y_data)
-                level_min = np.min(self.level_y_data)
-                level_max = np.max(self.level_y_data)
+            if len(level_y_copy) > 0:
+                level_mean = np.mean(level_y_copy)
+                level_std = np.std(level_y_copy)
+                level_min = np.min(level_y_copy)
+                level_max = np.max(level_y_copy)
                 self.level_stats_label.configure(text=f'Mean: {level_mean:.2f} | Std: {level_std:.2f} | Range: [{level_min:.2f}, {level_max:.2f}]')
             else:
                 self.level_stats_label.configure(text='Mean: N/A | Std: N/A')
@@ -535,8 +653,10 @@ class MainTab(BaseTab):
     # --- Event Handlers ---
     def start_recording(self):
         """Start recording experiment - continues from last point if data exists"""
+        print("[MAIN_TAB] start_recording() called")
         try:
             file_name = self.exp_name_entry.get().strip()
+            print(f"[MAIN_TAB] Experiment name: {file_name}")
             if not file_name:
                 messagebox.showerror('Error', 'Please enter an experiment name before starting recording.')
                 return
@@ -546,6 +666,23 @@ class MainTab(BaseTab):
                 return
             
             flow_rate = float(self.flow_rate_entry.get())
+            print(f"[MAIN_TAB] Flow rate: {flow_rate} ml/min")
+            
+            # Validate flow rate range
+            if flow_rate < 0:
+                messagebox.showerror('Error', 'Flow rate cannot be negative.')
+                return
+            
+            # Enforce maximum flow rate of 5.0 ml/min
+            MAX_FLOW_RATE = 5.0
+            if flow_rate > MAX_FLOW_RATE:
+                messagebox.showwarning('Flow Rate Limit', 
+                    f'Maximum flow rate is {MAX_FLOW_RATE} ml/min.\n'
+                    f'Flow rate will be set to {MAX_FLOW_RATE} ml/min.')
+                flow_rate = MAX_FLOW_RATE
+                self.flow_rate_entry.delete(0, 'end')
+                self.flow_rate_entry.insert(0, str(MAX_FLOW_RATE))
+            
             duration = int(self.duration_entry.get())
             valve_setting = {'valve1': self.valve_var.get() == 'main', 'valve2': self.valve_var.get() == 'rinsing'}
             
@@ -584,19 +721,30 @@ class MainTab(BaseTab):
                     self.update_queue.put(('UPDATE_FILE', f"{file_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"))
                 self.update_queue.put(('UPDATE_READINGS', (0, 0, flow_rate, 0)))
             
-            threading.Thread(target=self.experiment_thread,
+            print(f"[MAIN_TAB] Starting experiment thread with program: {experiment_program}")
+            print(f"[MAIN_TAB] Is new experiment: {is_new_experiment}")
+            thread = threading.Thread(target=self.experiment_thread,
                              args=(experiment_program, is_new_experiment),
-                             daemon=True).start()
-        except ValueError:
+                             daemon=True)
+            thread.start()
+            print(f"[MAIN_TAB] Thread started: {thread.is_alive()}")
+        except ValueError as e:
+            print(f"[MAIN_TAB ERROR] ValueError: {e}")
             messagebox.showerror('Error', 'Invalid input for Flow Rate or Duration. Please enter numbers.')
+        except Exception as e:
+            print(f"[MAIN_TAB ERROR] Unexpected error: {e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror('Error', f'Unexpected error: {e}')
     
     def stop_recording(self):
         """Stop recording - preserves data for continuation"""
         self.exp_manager.stop_experiment()
         
-        # Update last total time based on current data
-        if len(self.flow_x_data) > 0:
-            self.last_total_time = max(self.flow_x_data) if self.flow_x_data else 0.0
+        # Update last total time based on current data (thread-safe - BUG FIX #1)
+        with self.data_lock:
+            if len(self.flow_x_data) > 0:
+                self.last_total_time = max(self.flow_x_data) if self.flow_x_data else 0.0
         
         if self.update_queue:
             self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Stopped', 'orange')))
@@ -620,14 +768,16 @@ class MainTab(BaseTab):
     
     def clear_graph(self):
         """Clear all graphs"""
-        self.flow_x_data.clear()
-        self.flow_y_data.clear()
-        self.pressure_x_data.clear()
-        self.pressure_y_data.clear()
-        self.temp_x_data.clear()
-        self.temp_y_data.clear()
-        self.level_x_data.clear()
-        self.level_y_data.clear()
+        # BUG FIX #1: Thread-safe clearing with lock
+        with self.data_lock:
+            self.flow_x_data.clear()
+            self.flow_y_data.clear()
+            self.pressure_x_data.clear()
+            self.pressure_y_data.clear()
+            self.temp_x_data.clear()
+            self.temp_y_data.clear()
+            self.level_x_data.clear()
+            self.level_y_data.clear()
         
         x_axis_type = self.x_axis_combo.get()
         y_axis_type = self.y_axis_combo.get()
@@ -645,10 +795,19 @@ class MainTab(BaseTab):
             # Validate flow rate range
             if new_flow_rate < 0:
                 messagebox.showerror('Error', 'Flow rate cannot be negative.')
+                self.flow_rate_entry.delete(0, 'end')
+                self.flow_rate_entry.insert(0, str(self.current_flow_rate))
                 return
-            if new_flow_rate > 10:
-                if not messagebox.askyesno('Warning', f'Flow rate {new_flow_rate} ml/min is high. Continue?'):
-                    return
+            
+            # Enforce maximum flow rate of 5.0 ml/min
+            MAX_FLOW_RATE = 5.0
+            if new_flow_rate > MAX_FLOW_RATE:
+                messagebox.showwarning('Flow Rate Limit', 
+                    f'Maximum flow rate is {MAX_FLOW_RATE} ml/min.\n'
+                    f'Flow rate will be set to {MAX_FLOW_RATE} ml/min.')
+                new_flow_rate = MAX_FLOW_RATE
+                self.flow_rate_entry.delete(0, 'end')
+                self.flow_rate_entry.insert(0, str(MAX_FLOW_RATE))
             
             if new_flow_rate != self.current_flow_rate:
                 old_flow_rate = self.current_flow_rate
@@ -683,6 +842,32 @@ class MainTab(BaseTab):
             messagebox.showerror('Error', 'Invalid flow rate. Please enter a valid number.')
         except Exception as e:
             messagebox.showerror('Error', f'Error updating flow rate: {e}')
+    
+    def refresh_pump_status(self):
+        """Refresh pump connection status"""
+        try:
+            pump_info = self.hw_controller.pump.get_info()
+            
+            # Update status label with color
+            status_text = pump_info.get('status', 'Unknown')
+            status_color = pump_info.get('status_color', 'gray')
+            self.pump_status_label.configure(text=status_text, text_color=status_color)
+            
+            # Update port
+            port_text = pump_info.get('port', 'N/A')
+            self.pump_port_label.configure(text=port_text)
+            
+            # Update flow rate
+            flow_rate = pump_info.get('current_flow_rate', 0.0)
+            self.pump_flow_label.configure(text=f'{flow_rate:.2f} ml/min')
+            
+            # Update max flow rate display
+            max_flow = pump_info.get('max_flow_rate', 5.0)
+            self.pump_max_flow_label.configure(text=f'{max_flow:.1f} ml/min')
+            
+        except Exception as e:
+            print(f"Error refreshing pump status: {e}")
+            self.pump_status_label.configure(text='Error', text_color='red')
     
     def export_excel(self):
         """Export data to Excel"""
@@ -740,6 +925,9 @@ class MainTab(BaseTab):
     
     def experiment_thread(self, experiment_program, is_new_experiment=True):
         """Run experiment in separate thread - continues from last point if resuming"""
+        print(f"[EXPERIMENT_THREAD] Starting experiment thread")
+        print(f"[EXPERIMENT_THREAD] Program: {experiment_program}")
+        print(f"[EXPERIMENT_THREAD] Is new experiment: {is_new_experiment}")
         self.exp_manager.is_running = True
         
         if is_new_experiment:
@@ -757,12 +945,14 @@ class MainTab(BaseTab):
                 self.last_total_time = 0.0
             else:
                 if self.experiment_base_time is None:
-                    if len(self.flow_x_data) > 0:
-                        self.last_total_time = max(self.flow_x_data) if self.flow_x_data else 0.0
-                        self.experiment_base_time = time.time() - self.last_total_time
-                    else:
-                        self.experiment_base_time = time.time()
-                        self.last_total_time = 0.0
+                    # BUG FIX #1: Thread-safe access
+                    with self.data_lock:
+                        if len(self.flow_x_data) > 0:
+                            self.last_total_time = max(self.flow_x_data) if self.flow_x_data else 0.0
+                            self.experiment_base_time = time.time() - self.last_total_time
+                        else:
+                            self.experiment_base_time = time.time()
+                            self.last_total_time = 0.0
         
         experiment_start_time = self.experiment_base_time
         
@@ -777,12 +967,25 @@ class MainTab(BaseTab):
             if self.update_queue:
                 self.update_queue.put(('UPDATE_STATUS', f"Executing step: Duration={duration}s, Flow Rate={flow_rate} ml/min"))
             
+            # Set pump flow rate and start the pump
+            print(f"[EXPERIMENT_THREAD] Setting pump flow rate to {flow_rate} ml/min")
             self.exp_manager.hw_controller.set_pump_flow_rate(flow_rate)
+            time.sleep(0.3)  # Wait for pump to process flow rate setting
+            print(f"[EXPERIMENT_THREAD] Starting pump...")
+            pump_started = self.exp_manager.hw_controller.start_pump()  # Start the pump
+            print(f"[EXPERIMENT_THREAD] Pump start result: {pump_started}")
+            time.sleep(0.5)  # Wait for pump to actually start running
+            print(f"[EXPERIMENT_THREAD] Setting valves...")
             self.exp_manager.hw_controller.set_valves(valve_setting['valve1'], valve_setting['valve2'])
             
             start_time = time.time()
+            print(f"[EXPERIMENT_THREAD] Starting data collection loop...")
+            loop_count = 0
             
             while time.time() - start_time < duration and self.exp_manager.is_running:
+                loop_count += 1
+                if loop_count % 10 == 0:  # Print every 10 iterations
+                    print(f"[EXPERIMENT_THREAD] Loop iteration {loop_count}")
                 if not self.exp_manager.perform_safety_checks():
                     break
                 
@@ -806,15 +1009,16 @@ class MainTab(BaseTab):
                 if self.update_queue:
                     self.update_queue.put(('UPDATE_STATUS', f"Running: {remaining_time:.0f}s remaining, Flow={flow_rate}ml/min"))
                 
-                # Update data arrays
-                self.flow_x_data.append(elapsed_time_from_start)
-                self.flow_y_data.append(pump_data['flow'])
-                self.pressure_x_data.append(elapsed_time_from_start)
-                self.pressure_y_data.append(pressure)
-                self.temp_x_data.append(elapsed_time_from_start)
-                self.temp_y_data.append(temperature)
-                self.level_x_data.append(elapsed_time_from_start)
-                self.level_y_data.append(level * 100)
+                # Update data arrays (thread-safe with lock - BUG FIX #1)
+                with self.data_lock:
+                    self.flow_x_data.append(elapsed_time_from_start)
+                    self.flow_y_data.append(pump_data['flow'])
+                    self.pressure_x_data.append(elapsed_time_from_start)
+                    self.pressure_y_data.append(pressure)
+                    self.temp_x_data.append(elapsed_time_from_start)
+                    self.temp_y_data.append(temperature)
+                    self.level_x_data.append(elapsed_time_from_start)
+                    self.level_y_data.append(level * 100)
                 
                 data_point = {
                     "time": elapsed_time_from_start,
@@ -827,19 +1031,40 @@ class MainTab(BaseTab):
                 
                 self.data_handler.append_data(data_point)
                 
-                # Update graphs via queue
+                # Update graphs via queue (thread-safe - BUG FIX #1)
                 if self.update_queue:
-                    self.update_queue.put(('UPDATE_GRAPH1', (list(self.flow_x_data), list(self.flow_y_data))))
-                    self.update_queue.put(('UPDATE_GRAPH2', (list(self.pressure_x_data), list(self.pressure_y_data))))
-                    self.update_queue.put(('UPDATE_GRAPH3', (list(self.temp_x_data), list(self.temp_y_data))))
-                    self.update_queue.put(('UPDATE_GRAPH4', (list(self.level_x_data), list(self.level_y_data))))
+                    try:
+                        # Make copies while holding lock
+                        with self.data_lock:
+                            flow_x_copy = list(self.flow_x_data)
+                            flow_y_copy = list(self.flow_y_data)
+                            pressure_x_copy = list(self.pressure_x_data)
+                            pressure_y_copy = list(self.pressure_y_data)
+                            temp_x_copy = list(self.temp_x_data)
+                            temp_y_copy = list(self.temp_y_data)
+                            level_x_copy = list(self.level_x_data)
+                            level_y_copy = list(self.level_y_data)
+                        
+                        self.update_queue.put(('UPDATE_GRAPH1', (flow_x_copy, flow_y_copy)))
+                        self.update_queue.put(('UPDATE_GRAPH2', (pressure_x_copy, pressure_y_copy)))
+                        self.update_queue.put(('UPDATE_GRAPH3', (temp_x_copy, temp_y_copy)))
+                        self.update_queue.put(('UPDATE_GRAPH4', (level_x_copy, level_y_copy)))
+                        if loop_count == 1:  # Print on first iteration
+                            print(f"[EXPERIMENT_THREAD] Sent graph updates to queue")
+                            print(f"[EXPERIMENT_THREAD] Flow data: {len(flow_x_copy)} points")
+                            print(f"[EXPERIMENT_THREAD] Pressure data: {len(pressure_x_copy)} points")
+                    except Exception as e:
+                        print(f"[EXPERIMENT_THREAD ERROR] Error updating graphs: {e}")
                 time.sleep(1)
         
+        # Stop the pump when experiment ends
+        self.exp_manager.hw_controller.stop_pump()
         self.exp_manager.stop_experiment()
         
-        # Update last total time
-        if len(self.flow_x_data) > 0:
-            self.last_total_time = max(self.flow_x_data) if self.flow_x_data else 0.0
+        # Update last total time (thread-safe - BUG FIX #1)
+        with self.data_lock:
+            if len(self.flow_x_data) > 0:
+                self.last_total_time = max(self.flow_x_data) if self.flow_x_data else 0.0
         
         if self.update_queue:
             self.update_queue.put(('UPDATE_STATUS', f'Experiment paused. Total time: {self.last_total_time:.1f}s. Click Start to continue.'))

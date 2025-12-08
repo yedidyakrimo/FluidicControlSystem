@@ -13,6 +13,7 @@ from gui.tabs.iv_tab import IVTab
 from gui.tabs.program_tab import ProgramTab
 from gui.tabs.browser_tab import BrowserTab
 from gui.tabs.scheduler_tab import SchedulerTab
+from gui.tabs.iv_program_tab import IVProgramTab
 
 # Set appearance mode and color theme
 ctk.set_appearance_mode("dark")
@@ -57,10 +58,14 @@ class FluidicControlApp(ctk.CTk):
         self.update_sensor_readings()
         
         # Refresh SMU status on startup (if IV tab exists)
-        if hasattr(self, 'iv_tab_instance'):
-            self.smu_refresh_job = self.after(500, self.iv_tab_instance.refresh_smu_status)
-            if self.smu_refresh_job:
-                self.pending_callbacks.append(self.smu_refresh_job)
+        # BUG FIX #5: Better check for tab instance existence
+        if hasattr(self, 'iv_tab_instance') and self.iv_tab_instance is not None:
+            try:
+                self.smu_refresh_job = self.after(500, self.iv_tab_instance.refresh_smu_status)
+                if self.smu_refresh_job:
+                    self.pending_callbacks.append(self.smu_refresh_job)
+            except (AttributeError, RuntimeError) as e:
+                print(f"Warning: Could not refresh SMU status on startup: {e}")
         
         # Set up window close handler
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -112,6 +117,16 @@ class FluidicControlApp(ctk.CTk):
         )
         self.browser_tab_instance.pack(fill='both', expand=True)
         
+        iv_program_tab_frame = self.tabview.add("Write Program IV")
+        self.iv_program_tab_instance = IVProgramTab(
+            iv_program_tab_frame,
+            self.hw_controller,
+            self.data_handler,
+            self.exp_manager,
+            self.update_queue
+        )
+        self.iv_program_tab_instance.pack(fill='both', expand=True)
+        
         scheduler_tab_frame = self.tabview.add("Scheduler")
         self.scheduler_tab_instance = SchedulerTab(
             scheduler_tab_frame, 
@@ -133,27 +148,48 @@ class FluidicControlApp(ctk.CTk):
                 # Route updates to appropriate tabs
                 if update_type in ['UPDATE_GRAPH1', 'UPDATE_GRAPH2', 'UPDATE_GRAPH3', 'UPDATE_GRAPH4']:
                     # Main tab graph updates
-                    if hasattr(self, 'main_tab_instance'):
-                        x, y = data
-                        if update_type == 'UPDATE_GRAPH1':
-                            self.main_tab_instance.flow_x_data = list(x)
-                            self.main_tab_instance.flow_y_data = list(y)
-                        elif update_type == 'UPDATE_GRAPH2':
-                            self.main_tab_instance.pressure_x_data = list(x)
-                            self.main_tab_instance.pressure_y_data = list(y)
-                        elif update_type == 'UPDATE_GRAPH3':
-                            self.main_tab_instance.temp_x_data = list(x)
-                            self.main_tab_instance.temp_y_data = list(y)
-                        elif update_type == 'UPDATE_GRAPH4':
-                            self.main_tab_instance.level_x_data = list(x)
-                            self.main_tab_instance.level_y_data = list(y)
-                        
-                        # Update graphs
-                        if self.main_tab_instance.graph_mode_var.get() == "multi":
-                            self.main_tab_instance.update_multi_panel_graphs()
-                        else:
-                            self.main_tab_instance.on_axis_change()
-                        self.main_tab_instance.update_statistics()
+                    if hasattr(self, 'main_tab_instance') and self.main_tab_instance is not None:
+                        try:
+                            x, y = data
+                            print(f"[MAIN_APP] Received {update_type}: {len(x) if x else 0} x points, {len(y) if y else 0} y points")
+                            # BUG FIX #1: Thread-safe update of data arrays with lock
+                            with self.main_tab_instance.data_lock:
+                                # Update the data arrays first
+                                if update_type == 'UPDATE_GRAPH1':
+                                    self.main_tab_instance.flow_x_data = list(x) if x else []
+                                    self.main_tab_instance.flow_y_data = list(y) if y else []
+                                    print(f"[MAIN_APP] Updated flow data: {len(self.main_tab_instance.flow_x_data)} points")
+                                elif update_type == 'UPDATE_GRAPH2':
+                                    self.main_tab_instance.pressure_x_data = list(x) if x else []
+                                    self.main_tab_instance.pressure_y_data = list(y) if y else []
+                                    print(f"[MAIN_APP] Updated pressure data: {len(self.main_tab_instance.pressure_x_data)} points")
+                                elif update_type == 'UPDATE_GRAPH3':
+                                    self.main_tab_instance.temp_x_data = list(x) if x else []
+                                    self.main_tab_instance.temp_y_data = list(y) if y else []
+                                elif update_type == 'UPDATE_GRAPH4':
+                                    self.main_tab_instance.level_x_data = list(x) if x else []
+                                    self.main_tab_instance.level_y_data = list(y) if y else []
+                            
+                            # Update graphs based on current mode
+                            graph_mode = self.main_tab_instance.graph_mode_var.get()
+                            print(f"[MAIN_APP] Graph mode: {graph_mode}")
+                            if graph_mode == "multi":
+                                print(f"[MAIN_APP] Calling update_multi_panel_graphs()")
+                                self.main_tab_instance.update_multi_panel_graphs()
+                            else:
+                                # For single graph mode, update with current axis selection
+                                x_axis_type = self.main_tab_instance.x_axis_combo.get()
+                                y_axis_type = self.main_tab_instance.y_axis_combo.get()
+                                print(f"[MAIN_APP] Calling plot_xy_graph({x_axis_type}, {y_axis_type})")
+                                self.main_tab_instance.plot_xy_graph(x_axis_type, y_axis_type, [], [])
+                            
+                            # Update statistics
+                            self.main_tab_instance.update_statistics()
+                            print(f"[MAIN_APP] Graph update completed")
+                        except Exception as e:
+                            print(f"[MAIN_APP ERROR] Error updating graphs: {e}")
+                            import traceback
+                            traceback.print_exc()
                 
                 elif update_type in ['UPDATE_IV_GRAPH', 'UPDATE_IV_STATUS', 'UPDATE_IV_FILE', 
                                      'UPDATE_IV_STATUS_BAR', 'UPDATE_IV_TIME_GRAPH']:

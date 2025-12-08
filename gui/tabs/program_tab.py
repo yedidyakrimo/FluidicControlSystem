@@ -92,10 +92,11 @@ class ProgramTab(BaseTab):
         
         control_btn_frame = ctk.CTkFrame(control_frame)
         control_btn_frame.pack(pady=5)
-        ctk.CTkButton(control_btn_frame, text='Load Program', command=self.load_program, width=120).pack(side='left', padx=5)
-        ctk.CTkButton(control_btn_frame, text='Save Program', command=self.save_program, width=120).pack(side='left', padx=5)
-        ctk.CTkButton(control_btn_frame, text='Run Program', command=self.run_program, width=120).pack(side='left', padx=5)
-        ctk.CTkButton(control_btn_frame, text='Stop Program', command=self.stop_program, width=120).pack(side='left', padx=5)
+        self.create_blue_button(control_btn_frame, text='Load Program', command=self.load_program, width=120).pack(side='left', padx=5)
+        self.create_blue_button(control_btn_frame, text='Save Program', command=self.save_program, width=120).pack(side='left', padx=5)
+        self.create_blue_button(control_btn_frame, text='Run Program', command=self.run_program, width=120).pack(side='left', padx=5)
+        self.create_blue_button(control_btn_frame, text='Stop Program', command=self.stop_program, width=120,
+                                fg_color='#0D47A1', hover_color='#0C3A7A').pack(side='left', padx=5)
         
         # Program Library
         library_frame = ctk.CTkFrame(self)
@@ -114,7 +115,7 @@ class ProgramTab(BaseTab):
         )
         self.program_optionmenu.pack(side='left', padx=5)
         
-        ctk.CTkButton(library_content, text='Load Selected', command=self.load_selected, width=150).pack(side='left', padx=5)
+        self.create_blue_button(library_content, text='Load Selected', command=self.load_selected, width=150).pack(side='left', padx=5)
         
         # Program Status
         status_frame = ctk.CTkFrame(self)
@@ -225,7 +226,16 @@ class ProgramTab(BaseTab):
                             value = value.strip()
                             
                             if key == 'flow':
-                                step_data['flow_rate'] = float(value)
+                                flow_rate = float(value)
+                                # Enforce maximum flow rate of 5.0 ml/min
+                                MAX_FLOW_RATE = 5.0
+                                if flow_rate > MAX_FLOW_RATE:
+                                    print(f"Warning: Flow rate {flow_rate} ml/min exceeds maximum of {MAX_FLOW_RATE} ml/min. Setting to {MAX_FLOW_RATE} ml/min.")
+                                    flow_rate = MAX_FLOW_RATE
+                                if flow_rate < 0:
+                                    print(f"Warning: Flow rate cannot be negative. Setting to 0.")
+                                    flow_rate = 0.0
+                                step_data['flow_rate'] = flow_rate
                             elif key == 'duration':
                                 step_data['duration'] = int(value)
                             elif key == 'temp':
@@ -266,7 +276,11 @@ class ProgramTab(BaseTab):
             if self.update_queue:
                 self.update_queue.put(('UPDATE_PROGRAM_STATUS', f"Executing step: Duration={duration}s, Flow Rate={flow_rate} ml/min, Temp={temperature}°C"))
             
+            # Set pump flow rate and start the pump
             self.exp_manager.hw_controller.set_pump_flow_rate(flow_rate)
+            time.sleep(0.3)  # Wait for pump to process flow rate setting
+            self.exp_manager.hw_controller.start_pump()  # Start the pump
+            time.sleep(0.5)  # Wait for pump to actually start running
             self.exp_manager.hw_controller.set_heating_plate_temp(temperature)
             self.exp_manager.hw_controller.set_valves(valve_setting['valve1'], valve_setting['valve2'])
             
@@ -288,15 +302,16 @@ class ProgramTab(BaseTab):
                 if self.update_queue:
                     self.update_queue.put(('UPDATE_STATUS', f"Running: {remaining_time:.0f}s remaining, Flow={flow_rate}ml/min"))
                 
-                # Update data arrays
-                self.flow_x_data.append(elapsed_time_from_start)
-                self.flow_y_data.append(pump_data['flow'])
-                self.pressure_x_data.append(elapsed_time_from_start)
-                self.pressure_y_data.append(pressure)
-                self.temp_x_data.append(elapsed_time_from_start)
-                self.temp_y_data.append(temperature_read)
-                self.level_x_data.append(elapsed_time_from_start)
-                self.level_y_data.append(level * 100)
+                # Update data arrays (thread-safe with lock - BUG FIX #1)
+                with self.data_lock:
+                    self.flow_x_data.append(elapsed_time_from_start)
+                    self.flow_y_data.append(pump_data['flow'])
+                    self.pressure_x_data.append(elapsed_time_from_start)
+                    self.pressure_y_data.append(pressure)
+                    self.temp_x_data.append(elapsed_time_from_start)
+                    self.temp_y_data.append(temperature_read)
+                    self.level_x_data.append(elapsed_time_from_start)
+                    self.level_y_data.append(level * 100)
                 
                 data_point = {
                     "time": elapsed_time_from_start,
@@ -309,12 +324,23 @@ class ProgramTab(BaseTab):
                 }
                 self.data_handler.append_data(data_point)
                 
-                # Update graphs
+                # Update graphs (thread-safe - BUG FIX #1)
                 if self.update_queue:
-                    self.update_queue.put(('UPDATE_GRAPH1', (list(self.flow_x_data), list(self.flow_y_data))))
-                    self.update_queue.put(('UPDATE_GRAPH2', (list(self.pressure_x_data), list(self.pressure_y_data))))
-                    self.update_queue.put(('UPDATE_GRAPH3', (list(self.temp_x_data), list(self.temp_y_data))))
-                    self.update_queue.put(('UPDATE_GRAPH4', (list(self.level_x_data), list(self.level_y_data))))
+                    # Make copies while holding lock
+                    with self.data_lock:
+                        flow_x_copy = list(self.flow_x_data)
+                        flow_y_copy = list(self.flow_y_data)
+                        pressure_x_copy = list(self.pressure_x_data)
+                        pressure_y_copy = list(self.pressure_y_data)
+                        temp_x_copy = list(self.temp_x_data)
+                        temp_y_copy = list(self.temp_y_data)
+                        level_x_copy = list(self.level_x_data)
+                        level_y_copy = list(self.level_y_data)
+                    
+                    self.update_queue.put(('UPDATE_GRAPH1', (flow_x_copy, flow_y_copy)))
+                    self.update_queue.put(('UPDATE_GRAPH2', (pressure_x_copy, pressure_y_copy)))
+                    self.update_queue.put(('UPDATE_GRAPH3', (temp_x_copy, temp_y_copy)))
+                    self.update_queue.put(('UPDATE_GRAPH4', (level_x_copy, level_y_copy)))
                 time.sleep(1)
         
         self.exp_manager.stop_experiment()

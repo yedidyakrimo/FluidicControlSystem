@@ -53,7 +53,7 @@ class BrowserTab(BaseTab):
         self.tag_filter_entry.pack(side='left', padx=5)
         self.tag_filter_entry.bind('<KeyRelease>', lambda e: self.filter_experiments())
         
-        ctk.CTkButton(search_controls, text='Refresh', command=self.refresh_experiments, width=100).pack(side='left', padx=5)
+        self.create_blue_button(search_controls, text='Refresh', command=self.refresh_experiments, width=100).pack(side='left', padx=5)
         
         # Experiments list
         list_frame = ctk.CTkFrame(self)
@@ -67,9 +67,9 @@ class BrowserTab(BaseTab):
         action_frame = ctk.CTkFrame(self)
         action_frame.pack(fill='x', padx=10, pady=5)
         
-        ctk.CTkButton(action_frame, text='Load Selected', command=self.load_experiment, width=150).pack(side='left', padx=5)
-        ctk.CTkButton(action_frame, text='Compare Selected', command=self.compare_experiments, width=150).pack(side='left', padx=5)
-        ctk.CTkButton(action_frame, text='Export Selected', command=self.export_selected_experiment, width=150).pack(side='left', padx=5)
+        self.create_blue_button(action_frame, text='Load Selected', command=self.load_experiment, width=150).pack(side='left', padx=5)
+        self.create_blue_button(action_frame, text='Compare Selected', command=self.compare_experiments, width=150).pack(side='left', padx=5)
+        self.create_blue_button(action_frame, text='Export Selected', command=self.export_selected_experiment, width=150).pack(side='left', padx=5)
     
     def refresh_experiments(self):
         """Refresh the list of experiments from data folder"""
@@ -184,27 +184,39 @@ class BrowserTab(BaseTab):
             df = pd.read_csv(exp['file'])
             
             # Load data into arrays (these will be shared with MainTab via update_queue)
-            if 'time' in df.columns:
-                time_data = df['time'].tolist()
-                if 'pump_flow_read' in df.columns:
-                    self.flow_x_data = time_data.copy()
-                    self.flow_y_data = df['pump_flow_read'].tolist()
-                if 'pressure_read' in df.columns:
-                    self.pressure_x_data = time_data.copy()
-                    self.pressure_y_data = df['pressure_read'].tolist()
-                if 'temp_read' in df.columns:
-                    self.temp_x_data = time_data.copy()
-                    self.temp_y_data = df['temp_read'].tolist()
-                if 'level_read' in df.columns:
-                    self.level_x_data = time_data.copy()
-                    self.level_y_data = (df['level_read'] * 100).tolist()
+            # BUG FIX #1: Thread-safe update with lock
+            with self.data_lock:
+                if 'time' in df.columns:
+                    time_data = df['time'].tolist()
+                    if 'pump_flow_read' in df.columns:
+                        self.flow_x_data = time_data.copy()
+                        self.flow_y_data = df['pump_flow_read'].tolist()
+                    if 'pressure_read' in df.columns:
+                        self.pressure_x_data = time_data.copy()
+                        self.pressure_y_data = df['pressure_read'].tolist()
+                    if 'temp_read' in df.columns:
+                        self.temp_x_data = time_data.copy()
+                        self.temp_y_data = df['temp_read'].tolist()
+                    if 'level_read' in df.columns:
+                        self.level_x_data = time_data.copy()
+                        self.level_y_data = (df['level_read'] * 100).tolist()
+                
+                # Make copies for queue
+                flow_x_copy = list(self.flow_x_data)
+                flow_y_copy = list(self.flow_y_data)
+                pressure_x_copy = list(self.pressure_x_data)
+                pressure_y_copy = list(self.pressure_y_data)
+                temp_x_copy = list(self.temp_x_data)
+                temp_y_copy = list(self.temp_y_data)
+                level_x_copy = list(self.level_x_data)
+                level_y_copy = list(self.level_y_data)
             
             # Update graphs via queue (MainTab will handle this)
             if self.update_queue:
-                self.update_queue.put(('UPDATE_GRAPH1', (list(self.flow_x_data), list(self.flow_y_data))))
-                self.update_queue.put(('UPDATE_GRAPH2', (list(self.pressure_x_data), list(self.pressure_y_data))))
-                self.update_queue.put(('UPDATE_GRAPH3', (list(self.temp_x_data), list(self.temp_y_data))))
-                self.update_queue.put(('UPDATE_GRAPH4', (list(self.level_x_data), list(self.level_y_data))))
+                self.update_queue.put(('UPDATE_GRAPH1', (flow_x_copy, flow_y_copy)))
+                self.update_queue.put(('UPDATE_GRAPH2', (pressure_x_copy, pressure_y_copy)))
+                self.update_queue.put(('UPDATE_GRAPH3', (temp_x_copy, temp_y_copy)))
+                self.update_queue.put(('UPDATE_GRAPH4', (level_x_copy, level_y_copy)))
             
             messagebox.showinfo('Success', f"Loaded experiment: {exp['metadata'].get('name', 'Unknown')}")
         except Exception as e:
