@@ -28,6 +28,6 @@ GUI_UPDATE_INTERVAL = 100  # 100ms
 
 # Safety thresholds
 MIN_LEVEL_THRESHOLD = 0.05  # 5% capacity
-MAX_PRESSURE_THRESHOLD = 100.0  # psi (adjust as needed)
+MAX_PRESSURE_THRESHOLD = 7.0  # bar (adjust as needed, ~100 PSI = 6.9 bar)
 MAX_TEMPERATURE_THRESHOLD = 100.0  # Celsius (adjust as needed)
 

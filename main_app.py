@@ -4,7 +4,7 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from hardware.hardware_controller import HardwareController
 from experiments.experiment_manager import ExperimentManager
-from data_handler import DataHandler
+from utils.data_handler import DataHandler
 import queue
 
 # Import new tab modules
@@ -242,14 +242,22 @@ class FluidicControlApp(ctk.CTk):
                             self.main_tab_instance.current_file_label.configure(text=data)
                         elif update_type == 'UPDATE_READINGS':
                             pressure, temp, flow, level = data
-                            self.main_tab_instance.pressure_label.configure(text=f"{pressure:.2f} PSI")
+                            # FIXED: Handle None pressure (sensor disconnected)
+                            if pressure is not None:
+                                self.main_tab_instance.pressure_label.configure(text=f"{pressure:.2f} bar", text_color='green')
+                            else:
+                                self.main_tab_instance.pressure_label.configure(text="N/A", text_color='red')
                             # Handle None temperature (sensor disconnected)
                             if temp is not None:
                                 self.main_tab_instance.temp_label.configure(text=f"{temp:.2f} °C", text_color='green')
                             else:
                                 self.main_tab_instance.temp_label.configure(text="---", text_color='red')
                             self.main_tab_instance.flow_label.configure(text=f"{flow:.2f} ml/min")
-                            self.main_tab_instance.level_label.configure(text=f"{level:.2f} %")
+                            # FIXED: Handle None level (sensor disconnected)
+                            if level is not None:
+                                self.main_tab_instance.level_label.configure(text=f"{level:.2f} %", text_color='green')
+                            else:
+                                self.main_tab_instance.level_label.configure(text="N/A", text_color='red')
                 
                 elif update_type == 'UPDATE_PROGRAM_STATUS':
                     # Program tab status updates

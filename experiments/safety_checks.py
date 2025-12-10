@@ -42,12 +42,12 @@ class SafetyChecker:
             print(f"Error checking level: {e}")
             return True  # Continue if we can't check
     
-    def check_pressure(self, max_pressure=100.0):
+    def check_pressure(self, max_pressure=7.0):
         """
         Check maximum pressure
         
         Args:
-            max_pressure: Maximum allowed pressure (PSI)
+            max_pressure: Maximum allowed pressure (bar) - default 7.0 bar (~100 PSI)
         Returns:
             True if OK, False if there's a problem
         """
@@ -59,7 +59,7 @@ class SafetyChecker:
             if current_pressure is None:
                 return True
             if current_pressure > max_pressure:
-                print(f"WARNING: Pressure is too high ({current_pressure:.2f} PSI). Stopping experiment.")
+                print(f"WARNING: Pressure is too high ({current_pressure:.2f} bar). Stopping experiment.")
                 return False
             return True
         except Exception as e:
@@ -90,13 +90,13 @@ class SafetyChecker:
             print(f"Error checking temperature: {e}")
             return True  # Continue if we can't check
     
-    def perform_all_checks(self, level_threshold=0.05, max_pressure=100.0, max_temperature=100.0):
+    def perform_all_checks(self, level_threshold=0.05, max_pressure=7.0, max_temperature=100.0):
         """
         Perform all safety checks
         
         Args:
             level_threshold: Minimum liquid level threshold (0.05 = 5%)
-            max_pressure: Maximum allowed pressure (PSI)
+            max_pressure: Maximum allowed pressure (bar) - default 7.0 bar (~100 PSI)
             max_temperature: Maximum allowed temperature (°C)
         Returns:
             True if all checks pass, False if any check fails

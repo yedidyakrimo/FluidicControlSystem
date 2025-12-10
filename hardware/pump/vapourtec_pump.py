@@ -109,9 +109,8 @@ class VapourtecPump(HardwareBase):
     
     def force_reconnect(self):
         """
-        Force a hard reconnection attempt to the pump hardware.
-        This method always tries to connect to physical hardware first,
-        regardless of current simulation mode state.
+        Force a hard reconnection attempt with RETRY LOGIC.
+        Retries up to 2 times to handle pump boot-up lag or zombie ports.
         
         Returns:
             True if successfully connected, False otherwise
@@ -121,14 +120,20 @@ class VapourtecPump(HardwareBase):
             self.enable_simulation()
             return False
         
-        # Step 1: Reset flags - temporarily disable simulation mode to force hardware attempt
+        # --- Aggressive Cleanup First ---
         print(f"[FORCE_RECONNECT] Attempting hard reconnection to pump on port {self.port}...")
         
-        # Step 2: Close any existing connections
         try:
+            # Stop pump before disconnecting
             if self.pump:
                 try:
-                    self.stop()  # Stop pump before disconnecting
+                    self.stop()
+                except:
+                    pass
+            
+            # Close all connections aggressively
+            if self.pump:
+                try:
                     self.pump.disconnect()
                 except:
                     pass
@@ -138,47 +143,70 @@ class VapourtecPump(HardwareBase):
                 except:
                     pass
         except Exception as e:
-            print(f"[FORCE_RECONNECT] Error closing existing connections: {e}")
+            print(f"[FORCE_RECONNECT] Error during cleanup: {e}")
         
-        # Clear references
+        # Reset all references
         self.pump = None
         self.ser = None
         self.connected = False
         self.is_running = False
         
-        # Step 3: Hard re-connect attempt
-        try:
-            # Attempt hardware handshake
-            print(f"[FORCE_RECONNECT] Opening connection to {self.port}...")
-            self.pump = SF10(self.port)
-            # Get direct access to serial port for raw commands
-            self.ser = self.pump.ser
-            
-            # Step 4: CRITICAL - Send "Black Tube" command immediately if successful
-            print(f"[FORCE_RECONNECT] Setting Tube Type to ID {self.tube_type} (Black tube)...")
-            self.ser.write(f'STTA {self.tube_type}\r\n'.encode())
-            time.sleep(0.5)  # Wait for hardware to process the command
-            
-            # Set mode to flow mode using library method
-            if hasattr(self.pump, 'MODE_FLOW'):
-                print(f"[FORCE_RECONNECT] Setting mode to FLOW...")
-                self.pump.set_mode(self.pump.MODE_FLOW)
-            
-            # Step 5: Success - mark as connected
-            print(f"[FORCE_RECONNECT] ✅ Successfully reconnected to Vapourtec pump on port {self.port}")
-            self.connected = True
-            self.simulation_mode = False
-            return True
-            
-        except Exception as e:
-            # Step 6: Failure - only then fall back to simulation mode
-            error_msg = str(e)
-            print(f"[FORCE_RECONNECT] ❌ Failed to reconnect: {error_msg}")
-            print(f"[FORCE_RECONNECT] Falling back to simulation mode")
-            self.pump = None
-            self.ser = None
-            self.enable_simulation()
-            return False
+        # --- Retry Loop (The Fix) ---
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                print(f"[FORCE_RECONNECT] Connection attempt {attempt+1}/{max_retries}...")
+                
+                # 1. Initialize Library
+                self.pump = SF10(self.port)
+                self.ser = self.pump.ser
+                
+                # 2. CRITICAL: Send Black Tube Command
+                # Allow a tiny pause for serial to stabilize
+                time.sleep(0.2)
+                print(f"[FORCE_RECONNECT] Setting Tube Type to ID {self.tube_type} (Black tube)...")
+                self.ser.write(f'STTA {self.tube_type}\r\n'.encode())
+                time.sleep(0.5)  # Wait for hardware to process the command
+                
+                # 3. Set Mode
+                if hasattr(self.pump, 'MODE_FLOW'):
+                    print(f"[FORCE_RECONNECT] Setting mode to FLOW...")
+                    self.pump.set_mode(self.pump.MODE_FLOW)
+                
+                # 4. Success!
+                print(f"[FORCE_RECONNECT] ✅ Connected successfully on attempt {attempt+1}")
+                self.connected = True
+                self.simulation_mode = False
+                return True
+                
+            except Exception as e:
+                error_msg = str(e)
+                print(f"[FORCE_RECONNECT] Attempt {attempt+1} failed: {error_msg}")
+                
+                # Clean up specific to this failed attempt
+                try:
+                    if self.pump:
+                        self.pump.disconnect()
+                except:
+                    pass
+                try:
+                    if self.ser:
+                        self.ser.close()
+                except:
+                    pass
+                
+                self.pump = None
+                self.ser = None
+                
+                # If this was not the last attempt, wait and try again
+                if attempt < max_retries - 1:
+                    print("[FORCE_RECONNECT] Waiting 2 seconds for device to recover...")
+                    time.sleep(2.0)  # Critical wait for pump boot-up or port release
+        
+        # If we get here, all retries failed
+        print("[FORCE_RECONNECT] ❌ All connection attempts failed. Falling back to Simulation.")
+        self.enable_simulation()
+        return False
     
     def set_flow_rate(self, flow_rate_ml_min):
         """
@@ -285,13 +313,16 @@ class VapourtecPump(HardwareBase):
     
     def get_pressure(self):
         """
-        Get current pressure reading from pump
+        Get current pressure reading from pump using GP command
         
-        PATCH: The standard read_all() method causes AttributeError in this environment.
-        We must use in_waiting to read the pressure sensor safely.
+        Protocol:
+        - Send: b'GP\r\n'
+        - Wait: 0.1 seconds (CRITICAL timing)
+        - Read: Use in_waiting to check bytes, then read(num_bytes)
+        - DO NOT use: ser.read_all() (causes AttributeError)
         
         Returns:
-            Pressure value in bar (or None on error)
+            Pressure value in bar (or 0.0 if empty/error, or None on connection failure)
         """
         if self.pump and self.ser and self.connected:
             try:
@@ -299,47 +330,42 @@ class VapourtecPump(HardwareBase):
                 if self.ser.in_waiting > 0:
                     self.ser.read(self.ser.in_waiting)
                 
-                # Send GP command (Get Pressure) - raw serial command
+                # Send GP command (Get Pressure) - raw bytes as specified
                 self.ser.write(b'GP\r\n')
-                time.sleep(0.2)  # Wait longer for hardware to process and respond
                 
-                # PATCH: Use in_waiting instead of read_all() to avoid AttributeError
-                # Try reading multiple times with short delays
-                max_retries = 3
-                for retry in range(max_retries):
-                    bytes_to_read = self.ser.in_waiting
-                    if bytes_to_read > 0:
-                        # Read exactly the number of bytes available
-                        response = self.ser.read(bytes_to_read).decode('ascii', errors='ignore').strip()
-                        # Try to parse as float
-                        if response:
-                            try:
-                                pressure = float(response)
-                                return pressure
-                            except ValueError:
-                                # If not a number, try to extract number from response
-                                import re
-                                numbers = re.findall(r'-?\d+\.?\d*', response)
-                                if numbers:
-                                    try:
-                                        pressure = float(numbers[0])
-                                        return pressure
-                                    except ValueError:
-                                        pass
-                                # If still can't parse, continue to next retry
-                                if retry < max_retries - 1:
-                                    time.sleep(0.1)
-                                    continue
-                                print(f"Warning: Could not parse pressure response: '{response}'. Returning 0.0")
-                                return 0.0
-                    else:
-                        # No response yet, wait a bit and retry
-                        if retry < max_retries - 1:
-                            time.sleep(0.1)
-                            continue
+                # CRITICAL: Must wait 0.1 seconds to allow pump to populate buffer
+                time.sleep(0.1)
                 
-                # No response received after retries
-                return None
+                # CRITICAL: Use in_waiting to check available bytes (NOT read_all())
+                bytes_available = self.ser.in_waiting
+                
+                if bytes_available > 0:
+                    # Read exactly the number of bytes available
+                    response_bytes = self.ser.read(bytes_available)
+                    response = response_bytes.decode('ascii', errors='ignore').strip()
+                    
+                    # Try to parse as float
+                    if response:
+                        try:
+                            pressure = float(response)
+                            return pressure
+                        except ValueError:
+                            # If not a number, try to extract number from response
+                            import re
+                            numbers = re.findall(r'-?\d+\.?\d*', response)
+                            if numbers:
+                                try:
+                                    pressure = float(numbers[0])
+                                    return pressure
+                                except ValueError:
+                                    pass
+                            # Could not parse - return 0.0 as specified
+                            print(f"Warning: Could not parse pressure response: '{response}'. Returning 0.0")
+                            return 0.0
+                else:
+                    # No response - return 0.0 as specified
+                    return 0.0
+                    
             except Exception as e:
                 print(f"Error reading pressure: {e}")
                 return None

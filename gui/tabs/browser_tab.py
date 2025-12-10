@@ -266,7 +266,7 @@ class BrowserTab(BaseTab):
                         axes[3].plot(time_data, df['level_read'] * 100, label=name, color=color, alpha=0.7)
             
             # Configure axes
-            titles = ['Flow Rate (ml/min)', 'Pressure (PSI)', 'Temperature (°C)', 'Level (%)']
+            titles = ['Flow Rate (ml/min)', 'Pressure (bar)', 'Temperature (°C)', 'Level (%)']
             for ax, title in zip(axes, titles):
                 ax.set_xlabel("Time (s)")
                 ax.set_ylabel(title)

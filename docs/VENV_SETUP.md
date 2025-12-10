@@ -8,18 +8,18 @@ A virtual environment has been created in the `venv/` folder with all required p
 
 ### Option 1: Direct Run (Recommended - No activation needed)
 ```bash
-run_app_direct.bat
+scripts\run_app_direct.bat
 ```
 This runs the application directly using the virtual environment's Python without needing to activate it.
 
 ### Option 2: Using Batch File (with activation)
 ```bash
-run_app.bat
+scripts\run_app.bat
 ```
 
 ### Option 3: Using PowerShell Script
 ```powershell
-.\run_app.ps1
+.\scripts\run_app.ps1
 ```
 Note: If you get Execution Policy error, the script will automatically bypass it for this session.
 

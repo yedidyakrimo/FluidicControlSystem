@@ -27,9 +27,9 @@ The system is built around the following key hardware components:
 The system is built with a modular architecture:
 
 **Core Modules:**
-* **`main_app.py`** - Main GUI application and control loop
-* **`main.py`** - Application entry point
-* **`data_handler.py`** - Data logging and CSV/Excel management
+* **`main_app.py`** - Main GUI application and control loop (root directory)
+* **`scripts/main.py`** - Application entry point
+* **`utils/data_handler.py`** - Data logging and CSV/Excel management
 
 **Hardware Modules** (`hardware/`):
 * **`hardware_controller.py`** - Unified hardware interface

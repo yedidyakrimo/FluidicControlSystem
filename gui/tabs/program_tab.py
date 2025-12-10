@@ -307,19 +307,27 @@ class ProgramTab(BaseTab):
                     self.flow_x_data.append(elapsed_time_from_start)
                     self.flow_y_data.append(pump_data['flow'])
                     self.pressure_x_data.append(elapsed_time_from_start)
-                    self.pressure_y_data.append(pressure)
+                    # FIXED: Handle None like temperature
+                    if pressure is not None:
+                        self.pressure_y_data.append(pressure)
+                    else:
+                        self.pressure_y_data.append(float('nan'))
                     self.temp_x_data.append(elapsed_time_from_start)
                     self.temp_y_data.append(temperature_read)
                     self.level_x_data.append(elapsed_time_from_start)
-                    self.level_y_data.append(level * 100)
+                    # FIXED: Handle None like temperature and pressure
+                    if level is not None:
+                        self.level_y_data.append(level * 100)
+                    else:
+                        self.level_y_data.append(float('nan'))
                 
                 data_point = {
                     "time": elapsed_time_from_start,
                     "flow_setpoint": flow_rate,
                     "pump_flow_read": pump_data['flow'],
-                    "pressure_read": pressure,
-                    "temp_read": temperature_read,
-                    "level_read": level,
+                    "pressure_read": pressure if pressure is not None else "",  # FIXED: Handle None
+                    "temp_read": temperature_read if temperature_read is not None else "",
+                    "level_read": level if level is not None else "",
                     "program_step": len(experiment_program)
                 }
                 self.data_handler.append_data(data_point)

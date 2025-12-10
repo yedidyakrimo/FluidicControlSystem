@@ -132,14 +132,13 @@ def connect(self):
 
 ##### 2. `force_reconnect()`
 
-Force reconnection method used by the Refresh button. Always attempts hardware connection regardless of current state.
+Force reconnection method used by the Refresh button. Always attempts hardware connection regardless of current state. **Includes retry logic** to handle pump boot-up lag or zombie port locks.
 
 ```python
 def force_reconnect(self):
     """
-    Force a hard reconnection attempt to the pump hardware.
-    Always tries to connect to physical hardware first,
-    regardless of current simulation mode state.
+    Force a hard reconnection attempt with RETRY LOGIC.
+    Retries up to 2 times to handle pump boot-up lag or zombie ports.
     
     Returns:
         True if successfully connected, False otherwise
@@ -148,48 +147,89 @@ def force_reconnect(self):
         self.enable_simulation()
         return False
     
-    # Step 1: Close any existing connections
+    # --- Aggressive Cleanup First ---
+    # Stop pump and close all connections aggressively
     try:
         if self.pump:
-            self.stop()  # Stop pump before disconnecting
-            self.pump.disconnect()
+            try:
+                self.stop()  # Stop pump before disconnecting
+            except:
+                pass
+            try:
+                self.pump.disconnect()
+            except:
+                pass
         if self.ser:
-            self.ser.close()
+            try:
+                self.ser.close()
+            except:
+                pass
     except:
         pass
     
-    # Step 2: Clear all references
+    # Reset all references
     self.pump = None
     self.ser = None
     self.connected = False
     self.is_running = False
     
-    # Step 3: Attempt hardware handshake
-    try:
-        self.pump = SF10(self.port)
-        self.ser = self.pump.ser
-        
-        # Step 4: CRITICAL - Send Black Tube command
-        self.ser.write(f'STTA {self.tube_type}\r\n'.encode())
-        time.sleep(0.5)
-        
-        # Step 5: Set mode to FLOW
-        if hasattr(self.pump, 'MODE_FLOW'):
-            self.pump.set_mode(self.pump.MODE_FLOW)
-        
-        # Step 6: Success
-        self.connected = True
-        self.simulation_mode = False
-        return True
-        
-    except Exception as e:
-        # Step 7: Failure - fall back to simulation
-        print(f"Failed to reconnect: {e}")
-        self.pump = None
-        self.ser = None
-        self.enable_simulation()
-        return False
+    # --- Retry Loop (The Fix) ---
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            print(f"[FORCE_RECONNECT] Connection attempt {attempt+1}/{max_retries}...")
+            
+            # 1. Initialize Library
+            self.pump = SF10(self.port)
+            self.ser = self.pump.ser
+            
+            # 2. CRITICAL: Send Black Tube Command
+            # Allow a tiny pause for serial to stabilize
+            time.sleep(0.2)
+            self.ser.write(f'STTA {self.tube_type}\r\n'.encode())
+            time.sleep(0.5)  # Wait for hardware to process
+            
+            # 3. Set Mode
+            if hasattr(self.pump, 'MODE_FLOW'):
+                self.pump.set_mode(self.pump.MODE_FLOW)
+            
+            # 4. Success!
+            print(f"[FORCE_RECONNECT] ✅ Connected successfully on attempt {attempt+1}")
+            self.connected = True
+            self.simulation_mode = False
+            return True
+            
+        except Exception as e:
+            print(f"[FORCE_RECONNECT] Attempt {attempt+1} failed: {e}")
+            
+            # Clean up specific to this failed attempt
+            try:
+                if self.pump:
+                    self.pump.disconnect()
+                if self.ser:
+                    self.ser.close()
+            except:
+                pass
+            
+            self.pump = None
+            self.ser = None
+            
+            # If this was not the last attempt, wait and try again
+            if attempt < max_retries - 1:
+                print("[FORCE_RECONNECT] Waiting 2 seconds for device to recover...")
+                time.sleep(2.0)  # Critical wait for pump boot-up or port release
+    
+    # If we get here, all retries failed
+    print("[FORCE_RECONNECT] ❌ All connection attempts failed. Falling back to Simulation.")
+    self.enable_simulation()
+    return False
 ```
+
+**Key Features:**
+- **Retry Logic**: Attempts connection up to 2 times
+- **Aggressive Cleanup**: Closes all connections before retrying
+- **Wait Between Retries**: Waits 2 seconds between attempts to allow pump boot-up or port release
+- **Zombie Port Handling**: Cleans up failed attempts before retrying
 
 #### Control Methods
 

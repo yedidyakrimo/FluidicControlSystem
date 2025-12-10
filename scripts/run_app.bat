@@ -1,5 +1,6 @@
 @echo off
 REM Activate virtual environment and run the application
+cd /d %~dp0..
 call venv\Scripts\activate.bat
 if errorlevel 1 (
     echo Error: Failed to activate virtual environment

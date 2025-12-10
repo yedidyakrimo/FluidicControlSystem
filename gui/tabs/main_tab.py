@@ -404,7 +404,7 @@ class MainTab(BaseTab):
         # Configure each subplot
         graphs_config = [
             (self.flow_ax, 'Flow Rate', 'Flow Rate (ml/min)', '#2E86AB'),
-            (self.pressure_ax, 'Pressure', 'Pressure (PSI)', '#A23B72'),
+            (self.pressure_ax, 'Pressure', 'Pressure (bar)', '#A23B72'),
             (self.temp_ax, 'Temperature', 'Temperature (°C)', '#F18F01'),
             (self.level_ax, 'Liquid Level', 'Level (%)', '#06A77D')
         ]
@@ -508,7 +508,7 @@ class MainTab(BaseTab):
                 self.pressure_ax.relim()
                 self.pressure_ax.autoscale()
         self.pressure_ax.set_xlabel("Time (s)", color='black', fontsize=10)
-        self.pressure_ax.set_ylabel("Pressure (PSI)", color='black', fontsize=10)
+        self.pressure_ax.set_ylabel("Pressure (bar)", color='black', fontsize=10)
         self.pressure_ax.set_title("Pressure", color='black', fontsize=12, fontweight='bold', pad=10)
         self.pressure_ax.grid(True, alpha=0.4, color='gray', linestyle='-', linewidth=0.5)
         self.pressure_ax.set_axisbelow(True)
@@ -645,7 +645,7 @@ class MainTab(BaseTab):
         # Define styles for each parameter
         styles = {
             'Flow Rate': {'ylabel': 'Flow Rate (ml/min)', 'unit': 'ml/min'},
-            'Pressure': {'ylabel': 'Pressure (PSI)', 'unit': 'PSI'},
+            'Pressure': {'ylabel': 'Pressure (bar)', 'unit': 'bar'},
             'Temperature': {'ylabel': 'Temperature (°C)', 'unit': '°C'},
             'Level': {'ylabel': 'Liquid Level (%)', 'unit': '%'},
             'Time': {'ylabel': 'Time (s)', 'unit': 's'},
@@ -1440,7 +1440,12 @@ class MainTab(BaseTab):
                     self.flow_x_data.append(elapsed_time_from_start)
                     self.flow_y_data.append(pump_data['flow'])
                     self.pressure_x_data.append(elapsed_time_from_start)
-                    self.pressure_y_data.append(pressure)
+                    # Append pressure (or NaN if sensor disconnected) - FIXED: Handle None like temperature
+                    if pressure is not None:
+                        self.pressure_y_data.append(pressure)
+                    else:
+                        # Use NaN to show gaps in graph when sensor is disconnected
+                        self.pressure_y_data.append(float('nan'))
                     self.temp_x_data.append(elapsed_time_from_start)
                     # Append temperature (or NaN if sensor disconnected)
                     if temperature is not None:
@@ -1449,7 +1454,12 @@ class MainTab(BaseTab):
                         # Use NaN to show gaps in graph when sensor is disconnected
                         self.temp_y_data.append(float('nan'))
                     self.level_x_data.append(elapsed_time_from_start)
-                    self.level_y_data.append(level * 100)
+                    # FIXED: Handle None like temperature and pressure
+                    if level is not None:
+                        self.level_y_data.append(level * 100)
+                    else:
+                        # Use NaN to show gaps in graph when sensor is disconnected
+                        self.level_y_data.append(float('nan'))
                     
                     # Store Keithley data for graphing (synchronized with time)
                     self.keithley_time_data.append(elapsed_time_from_start)
@@ -1466,9 +1476,9 @@ class MainTab(BaseTab):
                     "time": elapsed_time_from_start,
                     "flow_setpoint": self.current_flow_rate,
                     "pump_flow_read": pump_data['flow'],
-                    "pressure_read": pressure,
+                    "pressure_read": pressure if pressure is not None else "",  # FIXED: Handle None like temperature
                     "temp_read": temperature if temperature is not None else "",
-                    "level_read": level,
+                    "level_read": level if level is not None else "",  # FIXED: Handle None
                     "voltage": keithley_voltage if keithley_voltage is not None else "",
                     "current": keithley_current if keithley_current is not None else "",
                     "target_voltage": float(self.keithley_bias_entry.get()) if self.keithley_output_enabled else ""

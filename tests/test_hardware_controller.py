@@ -29,7 +29,7 @@ try:
     
     try:
         pressure = hw_controller.read_pressure_sensor()
-        print(f"  - Pressure: {pressure:.2f} PSI")
+        print(f"  - Pressure: {pressure:.2f} bar")
     except Exception as e:
         print(f"  - Pressure: Error - {e}")
     

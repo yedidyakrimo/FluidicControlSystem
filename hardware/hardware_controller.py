@@ -74,8 +74,18 @@ class HardwareController:
     
     # --- Sensor Read Functions (backward compatibility) ---
     def read_pressure_sensor(self):
-        """Read pressure sensor"""
-        return self.pressure_sensor.read()
+        """
+        Read pressure from pump (not external sensor)
+        Updated to read directly from Vapourtec pump using GP command
+        
+        Returns:
+            Pressure value in bar (or None on error)
+        """
+        # Read pressure directly from pump - returns in bar
+        pressure = self.pump.get_pressure()
+        
+        # Pump already returns pressure in bar, no conversion needed
+        return pressure
     
     def read_temperature_sensor(self):
         """Read temperature sensor"""

@@ -75,9 +75,9 @@ class TimeDependentExperiment(BaseExperiment):
                     "time": time.time(),
                     "flow_setpoint": flow_rate,
                     "pump_flow_read": pump_data.get('flow', 0),
-                    "pressure_read": pressure_data,
-                    "temp_read": temp_data,
-                    "level_read": level_data
+                    "pressure_read": pressure_data if pressure_data is not None else "",  # FIXED: Handle None
+                    "temp_read": temp_data if temp_data is not None else "",
+                    "level_read": level_data if level_data is not None else ""
                 }
                 
                 # Save data to file

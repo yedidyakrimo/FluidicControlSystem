@@ -52,7 +52,7 @@ class PressureSensor(HardwareBase):
         Read pressure value
         
         Returns:
-            Pressure value in psi (or None on error)
+            Pressure value in bar (or None on error)
         """
         if self.ni_daq and self.ni_daq.is_connected():
             try:

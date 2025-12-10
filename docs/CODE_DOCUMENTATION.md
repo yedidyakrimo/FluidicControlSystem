@@ -31,9 +31,11 @@
 
 ```
 FluidicControlSystem/
-├── main.py                    # נקודת כניסה
-├── main_app.py                # אפליקציה ראשית (230 שורות)
-├── data_handler.py            # ניהול שמירת נתונים
+├── main_app.py                # אפליקציה ראשית (בשורש)
+├── scripts/
+│   └── main.py                # נקודת כניסה
+├── utils/
+│   └── data_handler.py        # ניהול שמירת נתונים
 │
 ├── config/                    # קבצי תצורה
 │   ├── settings.py           # הגדרות כלליות
@@ -687,7 +689,7 @@ smu.write(scpi.output_off())
 
 ## ניהול נתונים (Data Handler)
 
-### DataHandler (`data_handler.py`)
+### DataHandler (`utils/data_handler.py`)
 
 **תפקיד**: ניהול שמירת נתונים לקבצים.
 

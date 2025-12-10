@@ -160,7 +160,7 @@ self.update_queue = queue.Queue()  # ללא maxsize
 ---
 
 ### 6. **חוסר Flush לפני קריאת קובץ**
-**מיקום**: `data_handler.py:149-150`
+**מיקום**: `utils/data_handler.py:149-150`
 
 **בעיה**: רק `flush()` מבוצע, אבל לא `close()` לפני קריאת הקובץ.
 
@@ -177,7 +177,7 @@ if self.file:
 ---
 
 ### 7. **חוסר בדיקת תקינות נתונים לפני חישוב**
-**מיקום**: `data_handler.py:195-199`
+**מיקום**: `utils/data_handler.py:195-199`
 
 **בעיה**: חישוב משך ניסוי ללא בדיקה שהעמודות קיימות.
 
@@ -272,7 +272,7 @@ for v, i in zip(self.iv_x_data, self.iv_y_data):
 ---
 
 ### 14. **חוסר בדיקת תקינות לפני כתיבה לקובץ**
-**מיקום**: `data_handler.py:95-102`
+**מיקום**: `utils/data_handler.py:95-102`
 
 **בעיה**: כתיבה לקובץ ללא בדיקה שהקובץ פתוח.
 
@@ -288,7 +288,7 @@ if self.writer and data_point:  # בדיקה בסיסית
 ---
 
 ### 14.1. **חוסר איפוס משתנים אחרי סגירת קובץ**
-**מיקום**: `data_handler.py:133-136`
+**מיקום**: `utils/data_handler.py:133-136`
 
 **בעיה**: `close_file()` לא מאפס את `self.file` ו-`self.writer` אחרי סגירה.
 
