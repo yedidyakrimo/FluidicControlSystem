@@ -252,65 +252,59 @@ class Keithley2450(HardwareBase):
     
     def setup_for_iv_measurement(self, current_limit=0.1, voltage_range=None):
         """
-        Setup SMU for I-V measurement
+        Setup SMU for I-V measurement (Source Voltage, Measure Current).
+        
+        Improvements:
+        - Uses Auto-Range for both Source and Measure.
+        - Forces display to HOME screen (Current shown big, Voltage small).
         
         Args:
             current_limit: Current limit (A)
-            voltage_range: Voltage range (V). If None, will use default 20V range.
-                          Keithley 2450 supports: 0.2V, 2V, 20V, 200V
+            voltage_range: DEPRECATED - Auto-range is now used. Kept for backward compatibility.
             
         Returns:
             True if successful, False otherwise
         """
         if not self.smu:
-            print("SMU not connected. Cannot setup SMU.")
+            print("SMU not connected.")
             return False
         
         try:
-            # Configure as voltage source
+            # 1. Configure Source: Voltage
             print("Sending: SOUR:FUNC VOLT")
             self.smu.write(self.scpi.set_source_voltage())
             
-            # Set voltage range (important for allowing voltages > 2V)
-            if voltage_range is None:
-                # Default to 20V range to allow higher voltages
-                voltage_range = 20.0
-            else:
-                # Select the smallest range that covers the requested voltage
-                if voltage_range <= 0.2:
-                    voltage_range = 0.2
-                elif voltage_range <= 2.0:
-                    voltage_range = 2.0
-                elif voltage_range <= 20.0:
-                    voltage_range = 20.0
-                else:
-                    voltage_range = 200.0
+            # Enable Auto Range for Source
+            print("Sending: SOUR:VOLT:RANG:AUTO ON")
+            self.smu.write(self.scpi.set_voltage_range_auto())
             
-            print(f"Sending: SOUR:VOLT:RANG {voltage_range}")
-            self.smu.write(self.scpi.set_voltage_range(voltage_range))
-            
-            # Configure measurement function to current
+            # 2. Configure Measure: Current
             print('Sending: SENS:FUNC "CURR"')
             self.smu.write(self.scpi.set_sense_current())
             
-            # Set current limit/compliance
+            # Enable Auto Range for Measure
+            print("Sending: SENS:CURR:RANG:AUTO ON")
+            self.smu.write(self.scpi.set_current_measurement_range_auto())
+            
+            # 3. Set Compliance (Current Limit)
             print(f'Sending: SOUR:VOLT:ILIM {current_limit}')
             self.smu.write(self.scpi.set_current_limit(current_limit))
             
-            # Set NPLC
+            # 4. Set Speed (NPLC 1 is standard for good speed/accuracy balance)
             print('Sending: SENS:CURR:NPLC 1')
             self.smu.write(self.scpi.set_nplc(1))
             
-            # Set current range
-            print(f'Sending: SENS:CURR:RANG {current_limit}')
-            self.smu.write(self.scpi.set_current_range(current_limit))
-            
-            # Turn output on
+            # 5. Turn Output On
             print("Sending: OUTP ON")
             self.smu.write(self.scpi.output_on())
             
-            print(f"SMU configured for I-V measurement (voltage range: {voltage_range}V, current limit: {current_limit}A)")
+            # NOTE: Display command is NOT sent here - it will be sent in set_voltage()
+            # after the bias value is set, so the device knows what the fixed value is
+            # and can display correctly (Current large on top, Voltage small on bottom)
+            
+            print("SMU Setup Complete: Source V, Measure I")
             return True
+            
         except Exception as e:
             print(f"Error setting up SMU: {e}")
             import traceback
@@ -389,7 +383,7 @@ class Keithley2450(HardwareBase):
     
     def set_voltage(self, voltage):
         """
-        Set SMU output voltage
+        Set SMU output voltage (bias value)
         
         Args:
             voltage: Voltage to set (V)
@@ -402,7 +396,18 @@ class Keithley2450(HardwareBase):
             return False
         
         try:
+            # Set voltage value (bias)
+            print(f"Sending: SOUR:VOLT {voltage}")
             self.smu.write(self.scpi.set_voltage(voltage))
+            time.sleep(0.2)  # Wait for voltage to stabilize
+            
+            # Send display command AFTER setting bias value
+            # This ensures the device knows what the fixed value (voltage) is
+            # and what the measured value (current) is, so it can display correctly
+            print("Sending: DISPlay:SCReen HOME (after setting voltage bias)")
+            self.smu.write(self.scpi.set_display_home())
+            time.sleep(0.2)  # Wait for display to update
+            
             return True
         except Exception as e:
             print(f"Error setting SMU voltage: {e}")
@@ -410,61 +415,67 @@ class Keithley2450(HardwareBase):
     
     def setup_for_current_source_measurement(self, voltage_limit=20.0, current_range=None):
         """
-        Setup SMU for current source / voltage measurement mode
+        Setup SMU for Current Source (Source Current, Measure Voltage).
+        
+        Improvements:
+        - Uses Auto-Range for both Source and Measure.
+        - Forces display to HOME screen (Voltage shown big, Current small).
         
         Args:
             voltage_limit: Voltage limit (compliance) (V)
-            current_range: Current range (A). If None, will use default range.
+            current_range: DEPRECATED - Auto-range is now used. Kept for backward compatibility.
             
         Returns:
             True if successful, False otherwise
         """
         if not self.smu:
-            print("SMU not connected. Cannot setup SMU.")
+            print("SMU not connected.")
             return False
         
         try:
-            # Configure as current source
+            # 0. Reset device to ensure clean state
+            print("Sending: *RST")
+            self.smu.write(self.scpi.reset())
+            time.sleep(0.1)
+            
+            # 1. Configure Source: Current
             print("Sending: SOUR:FUNC CURR")
             self.smu.write(self.scpi.set_source_current())
+            print("Sending: SOUR:CURR:RANG:AUTO ON")
+            self.smu.write(self.scpi.set_current_source_range_auto())
             
-            # Set current range
-            if current_range is None:
-                current_range = 0.1  # Default to 100mA range
-            print(f"Sending: SOUR:CURR:RANG {current_range}")
-            self.smu.write(self.scpi.set_current_source_range(current_range))
-            
-            # Set voltage limit (compliance)
-            print(f"Sending: SOUR:CURR:VLIM {voltage_limit}")
-            self.smu.write(self.scpi.set_voltage_limit(voltage_limit))
-            
-            # Configure measurement function to voltage
+            # 2. Configure Measure: Voltage
             print('Sending: SENS:FUNC "VOLT"')
             self.smu.write(self.scpi.set_sense_voltage())
+            print("Sending: SENS:VOLT:RANG:AUTO ON")
+            self.smu.write(self.scpi.set_voltage_measurement_range_auto())
             
-            # Set voltage range
-            print(f"Sending: SENS:VOLT:RANG {voltage_limit}")
-            self.smu.write(self.scpi.set_voltage_measurement_range(voltage_limit))
-            
-            # Set NPLC
+            # 3. Set Compliance & Speed
+            print(f"Sending: SOUR:CURR:VLIM {voltage_limit}")
+            self.smu.write(self.scpi.set_voltage_limit(voltage_limit))
             print('Sending: SENS:VOLT:NPLC 1')
-            self.smu.write('SENS:VOLT:NPLC 1')
+            self.smu.write(self.scpi.set_voltage_nplc(1))
             
-            # Turn output on
+            # 4. Turn Output On
             print("Sending: OUTP ON")
             self.smu.write(self.scpi.output_on())
             
-            print(f"SMU configured for current source mode (voltage limit: {voltage_limit}V, current range: {current_range}A)")
+            # NOTE: Display command is NOT sent here - it will be sent in set_current()
+            # after the bias value is set, so the device knows what the fixed value is
+            # and can display correctly (Voltage large on top, Current small on bottom)
+            
+            print("SMU Setup Complete: Source I, Measure V")
             return True
+            
         except Exception as e:
-            print(f"Error setting up SMU for current source: {e}")
+            print(f"Error setting up SMU: {e}")
             import traceback
             traceback.print_exc()
             return False
     
     def set_current(self, current):
         """
-        Set SMU output current
+        Set SMU output current (bias value)
         
         Args:
             current: Current to set (A)
@@ -477,15 +488,32 @@ class Keithley2450(HardwareBase):
             return False
         
         try:
+            # Set current value (bias)
+            print(f"Sending: SOUR:CURR {current}")
             self.smu.write(self.scpi.set_current(current))
+            time.sleep(0.2)  # Wait for current to stabilize
+            
+            # Send display command AFTER setting bias value
+            # This ensures the device knows what the fixed value (current) is
+            # and what the measured value (voltage) is, so it can display correctly
+            print("Sending: DISPlay:SCReen HOME (after setting current bias)")
+            self.smu.write(self.scpi.set_display_home())
+            time.sleep(0.2)  # Wait for display to update
+            
             return True
         except Exception as e:
             print(f"Error setting SMU current: {e}")
             return False
     
-    def measure(self):
+    def measure(self, mode="voltage"):
         """
         Measure voltage and current from SMU
+        
+        Uses READ? command to read all values simultaneously (more efficient)
+        
+        Args:
+            mode: "voltage" (Source Voltage / Measure Current) 
+                  OR "current" (Source Current / Measure Voltage)
         
         Returns:
             Dictionary with voltage and current, or None on error
@@ -494,17 +522,35 @@ class Keithley2450(HardwareBase):
             return None
         
         try:
-            # MEAS:CURR? performs measurement automatically
-            current_string = self.smu.query(self.scpi.measure_current())
-            current = float(current_string)
+            # Use READ? to get all measurements simultaneously
+            # READ? returns: voltage,current,resistance,status (comma-separated)
+            read_string = self.smu.query(self.scpi.read_data())
             
-            # Read voltage setting
-            voltage_string = self.smu.query(self.scpi.query_voltage())
-            voltage = float(voltage_string)
+            # Parse the response (comma-separated values)
+            values = read_string.strip().split(',')
             
-            return {"voltage": voltage, "current": current}
+            data = {}
+            if len(values) >= 2:
+                # First value is voltage, second is current
+                data['voltage'] = float(values[0])
+                data['current'] = float(values[1])
+            else:
+                # Fallback if parsing fails
+                print(f"Warning: Could not parse READ? response: {read_string}")
+                return None
+            
+            # Refresh display to show updated measurement values in real-time
+            # This ensures the display updates as measurements are taken
+            try:
+                self.smu.write(self.scpi.set_display_home())
+            except:
+                pass  # Ignore errors, this is just to refresh display
+            
+            return data
         except Exception as e:
             print(f"Error measuring SMU: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def read_data(self):

@@ -38,6 +38,11 @@ class SCPICommands:
         return f"SOUR:VOLT:RANG {voltage_range}"
     
     @staticmethod
+    def set_voltage_range_auto():
+        """Enable auto-range for voltage source"""
+        return "SOUR:VOLT:RANG:AUTO ON"
+    
+    @staticmethod
     def set_current_limit(current_limit):
         """Set current limit (compliance)"""
         return f"SOUR:VOLT:ILIM {current_limit}"
@@ -56,6 +61,11 @@ class SCPICommands:
     def set_current_source_range(current_range):
         """Set current source range"""
         return f"SOUR:CURR:RANG {current_range}"
+    
+    @staticmethod
+    def set_current_source_range_auto():
+        """Enable auto-range for current source"""
+        return "SOUR:CURR:RANG:AUTO ON"
     
     @staticmethod
     def set_current(current):
@@ -89,14 +99,29 @@ class SCPICommands:
         return f"SENS:CURR:RANG {current_range}"
     
     @staticmethod
+    def set_current_measurement_range_auto():
+        """Enable auto-range for current measurement"""
+        return "SENS:CURR:RANG:AUTO ON"
+    
+    @staticmethod
     def set_voltage_measurement_range(voltage_range):
         """Set voltage measurement range"""
         return f"SENS:VOLT:RANG {voltage_range}"
     
     @staticmethod
+    def set_voltage_measurement_range_auto():
+        """Enable auto-range for voltage measurement"""
+        return "SENS:VOLT:RANG:AUTO ON"
+    
+    @staticmethod
     def set_nplc(nplc=1):
         """Set Number of Power Line Cycles for measurement"""
         return f"SENS:CURR:NPLC {nplc}"
+    
+    @staticmethod
+    def set_voltage_nplc(nplc=1):
+        """Set Number of Power Line Cycles for voltage measurement"""
+        return f"SENS:VOLT:NPLC {nplc}"
     
     @staticmethod
     def set_aperture_time(time_seconds):
@@ -126,9 +151,25 @@ class SCPICommands:
         return "MEAS:CURR?"
     
     @staticmethod
+    def measure_voltage():
+        """Measure voltage (performs measurement automatically)"""
+        return "MEAS:VOLT?"
+    
+    @staticmethod
     def read_data():
         """Read measurement data"""
         return "READ?"
+    
+    @staticmethod
+    def initiate_continuous():
+        """Enable continuous measurement mode (updates display in real-time)"""
+        return ":INITiate:CONTinuous ON"
+    
+    # --- Display Control ---
+    @staticmethod
+    def set_display_home():
+        """Switch display to HOME screen"""
+        return ":DISPlay:SCReen HOME"
     
     # --- Status Queries ---
     @staticmethod

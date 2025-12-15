@@ -1416,7 +1416,11 @@ class MainTab(BaseTab):
                 keithley_current = None
                 if self.keithley_output_enabled and self.hw_controller.smu is not None:
                     try:
-                        smu_measurement = self.hw_controller.measure_smu()
+                        # Get current mode to pass to measurement function
+                        current_mode = self.keithley_mode_var.get()  # "voltage" or "current"
+                        
+                        # Measure with correct mode
+                        smu_measurement = self.hw_controller.measure_smu(mode=current_mode)
                         if smu_measurement:
                             keithley_voltage = smu_measurement.get('voltage', None)
                             keithley_current = smu_measurement.get('current', None)

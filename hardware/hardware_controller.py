@@ -166,9 +166,15 @@ class HardwareController:
         """Set SMU current"""
         return self.smu.set_current(current)
     
-    def measure_smu(self):
-        """Measure voltage and current from SMU"""
-        return self.smu.measure()
+    def measure_smu(self, mode="voltage"):
+        """
+        Measure voltage and current from SMU
+        
+        Args:
+            mode: "voltage" (Source Voltage / Measure Current) 
+                  OR "current" (Source Current / Measure Voltage)
+        """
+        return self.smu.measure(mode=mode)
     
     def get_smu_output_state(self):
         """Get SMU output state"""
