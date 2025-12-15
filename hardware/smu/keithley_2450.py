@@ -294,6 +294,10 @@ class Keithley2450(HardwareBase):
             print('Sending: SENS:CURR:NPLC 1')
             self.smu.write(self.scpi.set_nplc(1))
             
+            # 4.5. Set Data Format: Ensure READ? returns voltage, current, resistance, status
+            print('Sending: FORM:ELEM VOLT,CURR,RES,STAT')
+            self.smu.write(self.scpi.set_format_elements())
+            
             # 5. Turn Output On
             print("Sending: OUTP ON")
             self.smu.write(self.scpi.output_on())
@@ -456,6 +460,10 @@ class Keithley2450(HardwareBase):
             print('Sending: SENS:VOLT:NPLC 1')
             self.smu.write(self.scpi.set_voltage_nplc(1))
             
+            # 3.5. Set Data Format: Ensure READ? returns voltage, current, resistance, status
+            print('Sending: FORM:ELEM VOLT,CURR,RES,STAT')
+            self.smu.write(self.scpi.set_format_elements())
+            
             # 4. Turn Output On
             print("Sending: OUTP ON")
             self.smu.write(self.scpi.output_on())
@@ -523,7 +531,7 @@ class Keithley2450(HardwareBase):
         
         try:
             # Use READ? to get all measurements simultaneously
-            # READ? returns: voltage,current,resistance,status (comma-separated)
+            # READ? returns: voltage,current,resistance,status (comma-separated) when FORM:ELEM VOLT,CURR,RES,STAT is set
             read_string = self.smu.query(self.scpi.read_data())
             
             # Parse the response (comma-separated values)

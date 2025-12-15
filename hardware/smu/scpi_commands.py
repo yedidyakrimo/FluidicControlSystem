@@ -94,6 +94,11 @@ class SCPICommands:
         return 'SENS:FUNC "VOLT"'
     
     @staticmethod
+    def set_sense_voltage_and_current():
+        """Set measurement functions to both voltage and current"""
+        return 'SENS:FUNC "VOLT","CURR"'
+    
+    @staticmethod
     def set_current_range(current_range):
         """Set current measurement range"""
         return f"SENS:CURR:RANG {current_range}"
@@ -176,4 +181,10 @@ class SCPICommands:
     def query_operation_status():
         """Query operation status condition"""
         return "STAT:OPER:COND?"
+    
+    # --- Data Format Configuration ---
+    @staticmethod
+    def set_format_elements():
+        """Set data format elements for READ? command (V, I, R, S)"""
+        return "FORM:ELEM VOLT,CURR,RES,STAT"
 
