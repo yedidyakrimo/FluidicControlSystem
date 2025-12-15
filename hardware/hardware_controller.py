@@ -176,6 +176,76 @@ class HardwareController:
         """
         return self.smu.measure(mode=mode)
     
+    # --- SMU Safe Mode Switching ---
+    def configure_smu_mode_safe(self, mode, bias_value=0.0, current_limit=0.1, voltage_limit=20.0):
+        """
+        Safely switch SMU mode between:
+        - 'voltage': Source Voltage / Measure Current
+        - 'current': Source Current / Measure Voltage
+
+        Sequence:
+        1. Remember if output was ON.
+        2. If ON → safely stop (set bias to 0 and OUTP OFF).
+        3. Apply new setup for requested mode.
+        4. Reset new bias to 0 (0 V or 0 A).
+        5. If it was ON before → turn output ON again, otherwise leave it OFF.
+        """
+        if not self.smu:
+            print("SMU not connected. Cannot configure mode safely.")
+            return False
+
+        try:
+            # 1. Remember original output state
+            was_on = False
+            try:
+                was_on = self.get_smu_output_state()
+            except Exception as e:
+                print(f"Warning: Could not read SMU output state: {e}")
+
+            # 2. If ON, stop safely (sets voltage to 0 and OUTP OFF)
+            if was_on:
+                try:
+                    self.smu.stop()
+                except Exception as e:
+                    print(f"Warning: Error while stopping SMU before mode change: {e}")
+
+            # 3. Apply new setup (these functions may turn output ON internally)
+            if mode == "voltage":
+                # Source Voltage / Measure Current
+                self.setup_smu_for_iv_measurement(current_limit=current_limit)
+                # 4. Reset bias to 0 V
+                self.set_smu_voltage(0.0)
+            elif mode == "current":
+                # Source Current / Measure Voltage
+                self.setup_smu_for_current_source(voltage_limit=voltage_limit)
+                # 4. Reset bias to 0 A
+                self.set_smu_current(0.0)
+            else:
+                print(f"Warning: Unknown SMU mode '{mode}'. Expected 'voltage' or 'current'.")
+                return False
+
+            # 5. Restore original output state
+            try:
+                if was_on:
+                    # Ensure output is ON
+                    if self.smu.smu is not None:
+                        self.smu.smu.write(self.smu.scpi.output_on())
+                else:
+                    # Make sure output stays OFF
+                    if self.smu.smu is not None:
+                        self.smu.smu.write(self.smu.scpi.output_off())
+                print(f"SMU mode safely configured to '{mode}'. Original output state was: {'ON' if was_on else 'OFF'}")
+            except Exception as e:
+                print(f"Warning: Could not restore SMU output state: {e}")
+
+            return True
+
+        except Exception as e:
+            print(f"Error in configure_smu_mode_safe: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     def get_smu_output_state(self):
         """Get SMU output state"""
         return self.smu.get_output_state()

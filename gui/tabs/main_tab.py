@@ -113,7 +113,7 @@ class MainTab(BaseTab):
         duration_frame.pack(fill='x', padx=5, pady=2)
         ctk.CTkLabel(duration_frame, text='Duration (sec):', width=150).pack(side='left', padx=5)
         self.duration_entry = ctk.CTkEntry(duration_frame, width=100)
-        self.duration_entry.insert(0, '60')
+        self.duration_entry.insert(0, '600')
         self.duration_entry.pack(side='left', padx=5)
         
         valve_frame = ctk.CTkFrame(exp_frame)
@@ -384,7 +384,7 @@ class MainTab(BaseTab):
         self.y_axis_combo = ctk.CTkComboBox(axis_label_frame,
                                             values=['Flow Rate', 'Pressure', 'Temperature', 'Level', 'Voltage', 'Current'],
                                             width=150, command=self.on_axis_change)
-        self.y_axis_combo.set('Pressure')
+        self.y_axis_combo.set('Current')
         self.y_axis_combo.pack(side='left', padx=5)
         
         # Multi-panel graph frames container
@@ -454,7 +454,7 @@ class MainTab(BaseTab):
         
         # Initialize graphs
         self.update_multi_panel_graphs()
-        self.plot_xy_graph('Time', 'Pressure', [], [])
+        self.plot_xy_graph('Time', 'Current', [], [])
     
     def on_graph_mode_change(self):
         """Switch between multi-panel and single graph modes"""
@@ -1129,6 +1129,7 @@ class MainTab(BaseTab):
         mode = self.keithley_mode_var.get()
         self.keithley_mode = mode
         
+        # Update UI labels / visible fields
         if mode == "voltage":
             self.keithley_bias_label.configure(text='Bias Voltage (V):')
             self.keithley_current_limit_entry.pack(side='left', padx=5)
@@ -1137,6 +1138,51 @@ class MainTab(BaseTab):
             self.keithley_bias_label.configure(text='Bias Current (A):')
             self.keithley_voltage_limit_entry.pack(side='left', padx=5)
             self.keithley_current_limit_entry.pack_forget()
+
+        # --- New: Safe automatic mode switch sequence ---
+        try:
+            # If there is no SMU, nothing to do
+            if self.hw_controller.smu is None:
+                return
+
+            # Read current UI values with safe defaults
+            try:
+                bias_value = float(self.keithley_bias_entry.get() or 0.0)
+            except ValueError:
+                bias_value = 0.0
+
+            try:
+                current_limit = float(self.keithley_current_limit_entry.get() or 0.1)
+            except ValueError:
+                current_limit = 0.1
+
+            try:
+                voltage_limit = float(self.keithley_voltage_limit_entry.get() or 20.0)
+            except ValueError:
+                voltage_limit = 20.0
+
+            # Perform safe mode reconfiguration on the hardware layer
+            success = self.hw_controller.configure_smu_mode_safe(
+                mode=mode,
+                bias_value=bias_value,
+                current_limit=current_limit,
+                voltage_limit=voltage_limit,
+            )
+
+            # Update status bar for user feedback
+            if self.update_queue:
+                if success:
+                    self.update_queue.put((
+                        'UPDATE_STATUS',
+                        f'SMU mode switched safely to {mode} (bias reset to 0, output state preserved)'
+                    ))
+                else:
+                    self.update_queue.put((
+                        'UPDATE_STATUS',
+                        f'Error while switching SMU mode to {mode}'
+                    ))
+        except Exception as e:
+            print(f"Error in on_keithley_mode_change safe reconfiguration: {e}")
     
     def on_keithley_output_toggle(self):
         """Handle Keithley output enable/disable toggle"""

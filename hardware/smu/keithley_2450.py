@@ -294,10 +294,6 @@ class Keithley2450(HardwareBase):
             print('Sending: SENS:CURR:NPLC 1')
             self.smu.write(self.scpi.set_nplc(1))
             
-            # 4.5. Set Data Format: Ensure READ? returns voltage, current, resistance, status
-            print('Sending: FORM:ELEM VOLT,CURR,RES,STAT')
-            self.smu.write(self.scpi.set_format_elements())
-            
             # 5. Turn Output On
             print("Sending: OUTP ON")
             self.smu.write(self.scpi.output_on())
@@ -460,10 +456,6 @@ class Keithley2450(HardwareBase):
             print('Sending: SENS:VOLT:NPLC 1')
             self.smu.write(self.scpi.set_voltage_nplc(1))
             
-            # 3.5. Set Data Format: Ensure READ? returns voltage, current, resistance, status
-            print('Sending: FORM:ELEM VOLT,CURR,RES,STAT')
-            self.smu.write(self.scpi.set_format_elements())
-            
             # 4. Turn Output On
             print("Sending: OUTP ON")
             self.smu.write(self.scpi.output_on())
@@ -515,44 +507,86 @@ class Keithley2450(HardwareBase):
     
     def measure(self, mode="voltage"):
         """
-        Measure voltage and current from SMU
+        Measure voltage and current from SMU.
         
-        Uses READ? command to read all values simultaneously (more efficient)
+        IMPORTANT (based on real 2450 behaviour):
+        - READ? returns a SINGLE measured value, according to SENS:FUNC:
+          * In our I-V setup (Source Voltage / Measure Current) we use SENS:FUNC "CURR",
+            so READ? returns **current only**.
+          * In current-source mode (Source Current / Measure Voltage) we use SENS:FUNC "VOLT",
+            so READ? returns **voltage only**.
+        - The complementary (non-measured) value is taken from the programmed source:
+          * Voltage mode:  voltage = SOUR:VOLT? (setpoint), current = READ? (measured)
+          * Current mode:  current = SOUR:CURR? (setpoint), voltage = READ? (measured)
         
         Args:
-            mode: "voltage" (Source Voltage / Measure Current) 
+            mode: "voltage" (Source Voltage / Measure Current)
                   OR "current" (Source Current / Measure Voltage)
         
         Returns:
-            Dictionary with voltage and current, or None on error
+            dict with keys:
+                - 'voltage': float
+                - 'current': float
+            or None on error.
         """
         if not self.smu:
             return None
         
         try:
-            # Use READ? to get all measurements simultaneously
-            # READ? returns: voltage,current,resistance,status (comma-separated) when FORM:ELEM VOLT,CURR,RES,STAT is set
-            read_string = self.smu.query(self.scpi.read_data())
-            
-            # Parse the response (comma-separated values)
-            values = read_string.strip().split(',')
-            
             data = {}
-            if len(values) >= 2:
-                # First value is voltage, second is current
-                data['voltage'] = float(values[0])
-                data['current'] = float(values[1])
+            
+            if mode == "voltage":
+                # I-V mode: Source V, Measure I
+                # READ? returns current (because SENS:FUNC "CURR")
+                read_string = self.smu.query(self.scpi.read_data()).strip()
+                try:
+                    current = float(read_string)
+                except ValueError as e:
+                    print(f"Warning: Could not parse READ? current response: {read_string}, error: {e}")
+                    return None
+                
+                # Voltage is the programmed source voltage (setpoint)
+                try:
+                    v_str = self.smu.query(self.scpi.query_voltage()).strip()
+                    voltage = float(v_str)
+                except Exception as e:
+                    print(f"Warning: Could not read programmed voltage (SOUR:VOLT?): {e}")
+                    return None
+                
+                data["voltage"] = voltage
+                data["current"] = current
+            
+            elif mode == "current":
+                # Current source mode: Source I, Measure V
+                # READ? returns voltage (because SENS:FUNC "VOLT")
+                read_string = self.smu.query(self.scpi.read_data()).strip()
+                try:
+                    voltage = float(read_string)
+                except ValueError as e:
+                    print(f"Warning: Could not parse READ? voltage response: {read_string}, error: {e}")
+                    return None
+                
+                # Current is the programmed source current (setpoint)
+                try:
+                    i_str = self.smu.query(self.scpi.query_current()).strip()
+                    current = float(i_str)
+                except Exception as e:
+                    print(f"Warning: Could not read programmed current (SOUR:CURR?): {e}")
+                    return None
+                
+                data["voltage"] = voltage
+                data["current"] = current
+            
             else:
-                # Fallback if parsing fails
-                print(f"Warning: Could not parse READ? response: {read_string}")
+                print(f"Warning: Unknown measure mode '{mode}'. Expected 'voltage' or 'current'.")
                 return None
             
             # Refresh display to show updated measurement values in real-time
-            # This ensures the display updates as measurements are taken
             try:
                 self.smu.write(self.scpi.set_display_home())
-            except:
-                pass  # Ignore errors, this is just to refresh display
+            except Exception:
+                # Ignore display refresh errors
+                pass
             
             return data
         except Exception as e:
