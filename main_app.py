@@ -6,6 +6,15 @@ from hardware.hardware_controller import HardwareController
 from experiments.experiment_manager import ExperimentManager
 from utils.data_handler import DataHandler
 import queue
+import logging
+
+# Configure global logging: by default show only WARNING and above
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+logger = logging.getLogger(__name__)
 
 # Import new tab modules
 from gui.tabs.main_tab import MainTab
@@ -65,7 +74,7 @@ class FluidicControlApp(ctk.CTk):
                 if self.smu_refresh_job:
                     self.pending_callbacks.append(self.smu_refresh_job)
             except (AttributeError, RuntimeError) as e:
-                print(f"Warning: Could not refresh SMU status on startup: {e}")
+                logger.warning("Could not refresh SMU status on startup: %s", e)
         
         # Set up window close handler
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -151,18 +160,29 @@ class FluidicControlApp(ctk.CTk):
                     if hasattr(self, 'main_tab_instance') and self.main_tab_instance is not None:
                         try:
                             x, y = data
-                            print(f"[MAIN_APP] Received {update_type}: {len(x) if x else 0} x points, {len(y) if y else 0} y points")
+                            logger.debug(
+                                "Received %s: %d x points, %d y points",
+                                update_type,
+                                len(x) if x else 0,
+                                len(y) if y else 0,
+                            )
                             # BUG FIX #1: Thread-safe update of data arrays with lock
                             with self.main_tab_instance.data_lock:
                                 # Update the data arrays first
                                 if update_type == 'UPDATE_GRAPH1':
                                     self.main_tab_instance.flow_x_data = list(x) if x else []
                                     self.main_tab_instance.flow_y_data = list(y) if y else []
-                                    print(f"[MAIN_APP] Updated flow data: {len(self.main_tab_instance.flow_x_data)} points")
+                                    logger.debug(
+                                        "Updated flow data: %d points",
+                                        len(self.main_tab_instance.flow_x_data),
+                                    )
                                 elif update_type == 'UPDATE_GRAPH2':
                                     self.main_tab_instance.pressure_x_data = list(x) if x else []
                                     self.main_tab_instance.pressure_y_data = list(y) if y else []
-                                    print(f"[MAIN_APP] Updated pressure data: {len(self.main_tab_instance.pressure_x_data)} points")
+                                    logger.debug(
+                                        "Updated pressure data: %d points",
+                                        len(self.main_tab_instance.pressure_x_data),
+                                    )
                                 elif update_type == 'UPDATE_GRAPH3':
                                     self.main_tab_instance.temp_x_data = list(x) if x else []
                                     self.main_tab_instance.temp_y_data = list(y) if y else []
@@ -172,24 +192,26 @@ class FluidicControlApp(ctk.CTk):
                             
                             # Update graphs based on current mode
                             graph_mode = self.main_tab_instance.graph_mode_var.get()
-                            print(f"[MAIN_APP] Graph mode: {graph_mode}")
+                            logger.debug("Graph mode: %s", graph_mode)
                             if graph_mode == "multi":
-                                print(f"[MAIN_APP] Calling update_multi_panel_graphs()")
+                                logger.debug("Calling update_multi_panel_graphs()")
                                 self.main_tab_instance.update_multi_panel_graphs()
                             else:
                                 # For single graph mode, update with current axis selection
                                 x_axis_type = self.main_tab_instance.x_axis_combo.get()
                                 y_axis_type = self.main_tab_instance.y_axis_combo.get()
-                                print(f"[MAIN_APP] Calling plot_xy_graph({x_axis_type}, {y_axis_type})")
+                                logger.debug(
+                                    "Calling plot_xy_graph(%s, %s)",
+                                    x_axis_type,
+                                    y_axis_type,
+                                )
                                 self.main_tab_instance.plot_xy_graph(x_axis_type, y_axis_type, [], [])
                             
                             # Update statistics
                             self.main_tab_instance.update_statistics()
-                            print(f"[MAIN_APP] Graph update completed")
+                            logger.debug("Graph update completed")
                         except Exception as e:
-                            print(f"[MAIN_APP ERROR] Error updating graphs: {e}")
-                            import traceback
-                            traceback.print_exc()
+                            logger.error("Error updating graphs: %s", e, exc_info=True)
                 
                 elif update_type in ['UPDATE_IV_GRAPH', 'UPDATE_IV_STATUS', 'UPDATE_IV_FILE', 
                                      'UPDATE_IV_STATUS_BAR', 'UPDATE_IV_TIME_GRAPH']:
