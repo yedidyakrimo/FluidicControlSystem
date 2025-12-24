@@ -31,7 +31,7 @@ class VapourtecPump(HardwareBase):
     
     MAX_FLOW_RATE = 5.0  # Maximum allowed flow rate in ml/min
     
-    def __init__(self, port='COM3', baudrate=9600, timeout=1, tube_type=3):
+    def __init__(self, port='COM3', baudrate=9600, timeout=3, tube_type=3):
         """
         Initialize Vapourtec pump
         

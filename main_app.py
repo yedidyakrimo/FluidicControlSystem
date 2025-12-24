@@ -112,7 +112,8 @@ class FluidicControlApp(ctk.CTk):
             self.hw_controller, 
             self.data_handler, 
             self.exp_manager, 
-            self.update_queue
+            self.update_queue,
+            main_tab_ref=self.main_tab_instance  # Pass reference to MainTab for integration
         )
         self.program_tab_instance.pack(fill='both', expand=True)
         
@@ -299,22 +300,32 @@ class FluidicControlApp(ctk.CTk):
         """Periodically update sensor readings"""
         if self.is_closing:
             return
-        if not self.exp_manager.is_running:
-            try:
-                pressure = self.hw_controller.read_pressure_sensor()
-                temperature = self.hw_controller.read_temperature_sensor()
-                pump_data = self.hw_controller.read_pump_data()
-                level = self.hw_controller.read_level_sensor()
-                
-                self.update_queue.put(('UPDATE_READINGS', (pressure, temperature, pump_data['flow'], level * 100)))
-            except Exception as e:
-                print(f"Error reading sensors: {e}")
+        
+        # Wrap entire function in try/except to prevent GUI hang
+        try:
+            if not self.exp_manager.is_running:
+                try:
+                    pressure = self.hw_controller.read_pressure_sensor()
+                    temperature = self.hw_controller.read_temperature_sensor()
+                    pump_data = self.hw_controller.read_pump_data()
+                    level = self.hw_controller.read_level_sensor()
+                    
+                    self.update_queue.put(('UPDATE_READINGS', (pressure, temperature, pump_data['flow'], level * 100)))
+                except Exception as e:
+                    logger.warning("Error reading sensors: %s", e)
+                    # Continue execution even if sensor read fails
+        except Exception as e:
+            logger.error("Critical error in update_sensor_readings: %s", e, exc_info=True)
+            # Ensure we still schedule next update even on critical error
         
         # Schedule next update (only if not closing)
         if not self.is_closing:
-            self.sensor_update_job = self.after(1000, self.update_sensor_readings)
-            if self.sensor_update_job:
-                self.pending_callbacks.append(self.sensor_update_job)
+            try:
+                self.sensor_update_job = self.after(1000, self.update_sensor_readings)
+                if self.sensor_update_job:
+                    self.pending_callbacks.append(self.sensor_update_job)
+            except Exception as e:
+                logger.error("Error scheduling sensor update: %s", e, exc_info=True)
     
     def on_closing(self):
         """Handle window close event - cleanup all resources"""

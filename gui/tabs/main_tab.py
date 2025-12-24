@@ -32,6 +32,9 @@ class MainTab(BaseTab):
         self.last_total_time = 0.0
         self.experiment_base_time = None
         
+        # Track measurement number for multiple measurements in same file
+        self.measurement_counter = 0
+        
         # Keithley 2450 control variables
         self.keithley_mode = "voltage"  # "voltage" or "current"
         self.keithley_bias_value = 0.0
@@ -806,24 +809,32 @@ class MainTab(BaseTab):
             self.current_flow_rate = flow_rate
             experiment_program = [{'duration': duration, 'flow_rate': flow_rate, 'valve_setting': valve_setting}]
             
-            # Check if this is a new experiment or continuation
-            is_new_experiment = not self.data_handler.file_path or not os.path.exists(self.data_handler.file_path)
+            # Check if file needs to be created (separate from new measurement)
+            file_needs_creation = not self.data_handler.file_path or not os.path.exists(self.data_handler.file_path) or self.data_handler.file is None
+            
+            # For multiple measurements: always treat as new measurement if base_time is None
+            # Continuation only happens if experiment_base_time exists and we're resuming same measurement
+            is_new_experiment = self.experiment_base_time is None
             
             if is_new_experiment:
-                # New experiment - save metadata and create new file
-                metadata = {
-                    'name': file_name,
-                    'description': self.exp_desc_entry.get().strip(),
-                    'tags': [tag.strip() for tag in self.exp_tags_entry.get().split(',') if tag.strip()],
-                    'operator': self.exp_operator_entry.get().strip(),
-                    'start_time': datetime.now().isoformat()
-                }
-                self.data_handler.set_custom_filename(file_name)
-                self.data_handler.set_metadata(metadata)
+                # New measurement - save metadata and create file if needed
+                if file_needs_creation:
+                    metadata = {
+                        'name': file_name,
+                        'description': self.exp_desc_entry.get().strip(),
+                        'tags': [tag.strip() for tag in self.exp_tags_entry.get().split(',') if tag.strip()],
+                        'operator': self.exp_operator_entry.get().strip(),
+                        'start_time': datetime.now().isoformat()
+                    }
+                    self.data_handler.set_custom_filename(file_name)
+                    self.data_handler.set_metadata(metadata)
+                    self.data_handler.create_new_file()
+                # Always increment measurement counter for new measurement
+                self.measurement_counter += 1
                 self.last_total_time = 0.0
                 self.experiment_base_time = time.time()
             else:
-                # Continuing existing experiment
+                # Continuing existing experiment (resume)
                 if self.experiment_base_time is None:
                     if len(self.flow_x_data) > 0:
                         self.last_total_time = max(self.flow_x_data) if self.flow_x_data else 0.0
@@ -867,13 +878,98 @@ class MainTab(BaseTab):
             self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Stopped', 'orange')))
             self.update_queue.put(('UPDATE_STATUS', f'Recording stopped. Total time: {self.last_total_time:.1f}s. Click Start to continue.'))
     
+    def start_recording_from_program_tab(self, experiment_program):
+        """
+        Wrapper method to start recording from ProgramTab.
+        This method does NOT change the existing start_recording() behavior.
+        
+        Args:
+            experiment_program: List of experiment steps from ProgramTab
+            
+        Returns:
+            True if started successfully, False otherwise
+        """
+        print("[MAIN_TAB] start_recording_from_program_tab() called")
+        
+        # Validate experiment name (same as start_recording)
+        file_name = self.exp_name_entry.get().strip()
+        if not file_name:
+            return False  # ProgramTab will show error message
+        
+        if not re.match(r'^[a-zA-Z0-9_-]+$', file_name):
+            return False  # ProgramTab will show error message
+        
+        # Validate program steps
+        for i, step in enumerate(experiment_program):
+            flow_rate = step.get('flow_rate', 0)
+            if flow_rate < 0:
+                return False
+            
+            MAX_FLOW_RATE = 5.0
+            if flow_rate > MAX_FLOW_RATE:
+                step['flow_rate'] = MAX_FLOW_RATE  # Auto-correct
+        
+        # Set current_flow_rate from first step (for backward compatibility)
+        if experiment_program and 'flow_rate' in experiment_program[0]:
+            self.current_flow_rate = experiment_program[0]['flow_rate']
+        
+        # Check if file needs to be created (separate from new measurement)
+        file_needs_creation = not self.data_handler.file_path or not os.path.exists(self.data_handler.file_path) or self.data_handler.file is None
+        
+        # For multiple measurements: always treat as new measurement if base_time is None
+        is_new_experiment = self.experiment_base_time is None
+        
+        if is_new_experiment:
+            # Same metadata logic as start_recording()
+            if file_needs_creation:
+                metadata = {
+                    'name': file_name,
+                    'description': self.exp_desc_entry.get().strip(),
+                    'tags': [tag.strip() for tag in self.exp_tags_entry.get().split(',') if tag.strip()],
+                    'operator': self.exp_operator_entry.get().strip(),
+                    'start_time': datetime.now().isoformat(),
+                    'program_source': 'ProgramTab'  # Mark source
+                }
+                self.data_handler.set_custom_filename(file_name)
+                self.data_handler.set_metadata(metadata)
+                self.data_handler.create_new_file()
+            # Always increment measurement counter for new measurement
+            self.measurement_counter += 1
+            self.last_total_time = 0.0
+            self.experiment_base_time = time.time()
+        else:
+            # Same continuation logic as start_recording()
+            if self.experiment_base_time is None:
+                with self.data_lock:
+                    if len(self.flow_x_data) > 0:
+                        self.last_total_time = max(self.flow_x_data) if self.flow_x_data else 0.0
+                        self.experiment_base_time = time.time() - self.last_total_time
+                    else:
+                        self.last_total_time = 0.0
+                        self.experiment_base_time = time.time()
+        
+        # Same UI updates as start_recording()
+        if self.update_queue:
+            self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Recording...', 'red')))
+            if is_new_experiment:
+                self.update_queue.put(('UPDATE_FILE', f"{file_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"))
+        
+        # Use existing experiment_thread() - no changes needed!
+        print(f"[MAIN_TAB] Starting experiment thread with program: {experiment_program}")
+        thread = threading.Thread(target=self.experiment_thread,
+                         args=(experiment_program, is_new_experiment),
+                         daemon=True)
+        thread.start()
+        print(f"[MAIN_TAB] Thread started: {thread.is_alive()}")
+        
+        return True
+    
     def finish_recording(self):
-        """Finish recording gracefully - closes file and resets"""
+        """Finish recording gracefully - keeps file open for multiple measurements"""
         self.exp_manager.finish_experiment()
         
-        # Close the file and reset for new experiment
-        if self.data_handler.file_path:
-            self.data_handler.close_file()
+        # Don't close the file - keep it open for multiple measurements in same file
+        # File will be closed only when application closes
         
         # Reset cumulative time for next experiment
         self.last_total_time = 0.0
@@ -900,12 +996,16 @@ class MainTab(BaseTab):
             self.keithley_current_data.clear()
             self.keithley_time_data.clear()
         
+        # Reset clock/timer for next experiment
+        self.experiment_base_time = None
+        self.last_total_time = 0.0
+        
         x_axis_type = self.x_axis_combo.get()
         y_axis_type = self.y_axis_combo.get()
         self.plot_xy_graph(x_axis_type, y_axis_type, [], [])
         
         if self.update_queue:
-            self.update_queue.put(('UPDATE_STATUS', 'Graph cleared.'))
+            self.update_queue.put(('UPDATE_STATUS', 'Graph cleared. Clock reset.'))
             self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Ready', 'green')))
     
     def update_flow(self):
@@ -1285,12 +1385,20 @@ class MainTab(BaseTab):
         print(f"[EXPERIMENT_THREAD] Is new experiment: {is_new_experiment}")
         self.exp_manager.is_running = True
         
+        # Note: is_new_experiment is already determined in start_recording/start_recording_from_program_tab
+        # This thread just uses the value passed to it
+        
         if is_new_experiment:
             if self.update_queue:
                 self.update_queue.put(('UPDATE_STATUS', 'Starting new experiment...'))
-            self.data_handler.create_new_file()
-            self.experiment_base_time = time.time()
-            self.last_total_time = 0.0
+            # Create file only if it doesn't exist (for multiple measurements in same file)
+            # Note: measurement_counter was already incremented in start_recording/start_recording_from_program_tab
+            if not self.data_handler.file_path or not os.path.exists(self.data_handler.file_path) or self.data_handler.file is None:
+                self.data_handler.create_new_file()
+            # Ensure base_time is set (should already be set in start_recording)
+            if self.experiment_base_time is None:
+                self.experiment_base_time = time.time()
+                self.last_total_time = 0.0
         else:
             if self.update_queue:
                 self.update_queue.put(('UPDATE_STATUS', f'Resuming experiment from {self.last_total_time:.1f}s...'))
@@ -1316,11 +1424,27 @@ class MainTab(BaseTab):
                 break
             
             duration = step.get('duration')
-            flow_rate = self.current_flow_rate
+            # Use flow_rate from step if available, otherwise use current_flow_rate (backward compatible)
+            flow_rate = step.get('flow_rate', self.current_flow_rate)
+            # Update current_flow_rate for consistency
+            if 'flow_rate' in step:
+                self.current_flow_rate = flow_rate
+            
+            # Support temperature from program steps (optional, backward compatible)
+            temperature = step.get('temperature', None)
             valve_setting = step.get('valve_setting', {'valve1': True, 'valve2': False})
             
             if self.update_queue:
-                self.update_queue.put(('UPDATE_STATUS', f"Executing step: Duration={duration}s, Flow Rate={flow_rate} ml/min"))
+                temp_str = f", Temp={temperature}°C" if temperature else ""
+                self.update_queue.put(('UPDATE_STATUS', 
+                    f"Executing step: Duration={duration}s, Flow Rate={flow_rate} ml/min{temp_str}"))
+            
+            # Set heating plate temperature if provided (optional, backward compatible)
+            if temperature is not None:
+                try:
+                    self.exp_manager.hw_controller.set_heating_plate_temp(temperature)
+                except Exception as e:
+                    print(f"[EXPERIMENT_THREAD] Warning: Could not set temperature: {e}")
             
             # Set pump flow rate and start the pump (with timeout handling)
             print(f"[EXPERIMENT_THREAD] Setting pump flow rate to {flow_rate} ml/min")
@@ -1523,6 +1647,7 @@ class MainTab(BaseTab):
                         self.keithley_current_data.append(0.0)
                 
                 data_point = {
+                    "measurement_id": self.measurement_counter,
                     "time": elapsed_time_from_start,
                     "flow_setpoint": self.current_flow_rate,
                     "pump_flow_read": pump_data['flow'],

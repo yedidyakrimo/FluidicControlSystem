@@ -66,6 +66,7 @@ class DataHandler:
         
         # Create a CSV writer object.
         self.writer = csv.DictWriter(self.file, fieldnames=[
+            "measurement_id",
             "time",
             "flow_setpoint",
             "pump_flow_read",
@@ -133,6 +134,8 @@ class DataHandler:
     def close_file(self):
         if self.file:
             self.file.close()
+            self.file = None
+            self.writer = None
             print(f"Data file closed.")
 
     def export_to_excel(self, output_path=None):

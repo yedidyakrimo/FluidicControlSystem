@@ -15,8 +15,9 @@ class ProgramTab(BaseTab):
     Program tab for writing and running experiment programs
     """
     
-    def __init__(self, parent, hw_controller, data_handler, exp_manager, update_queue=None):
+    def __init__(self, parent, hw_controller, data_handler, exp_manager, update_queue=None, main_tab_ref=None):
         super().__init__(parent, hw_controller, data_handler, exp_manager, update_queue)
+        self.main_tab_ref = main_tab_ref  # Reference to MainTab for integration
         
         # Create widgets
         self.create_widgets()
@@ -182,26 +183,61 @@ class ProgramTab(BaseTab):
             messagebox.showerror('Error', f"Error loading template: {e}")
     
     def run_program(self):
-        """Run program"""
+        """Run program - triggers MainTab.start_recording_from_program_tab()"""
         try:
+            # Parse program
             program_text = self.program_editor.get('1.0', 'end-1c')
             experiment_program = self.parse_program(program_text)
-            if experiment_program:
+            
+            if not experiment_program:
+                messagebox.showerror('Error', "Invalid program format or empty program")
+                return
+            
+            # Check if MainTab reference exists
+            if not self.main_tab_ref:
+                messagebox.showerror('Error', 
+                    "MainTab reference not available. Cannot start recording.\n"
+                    "Please use the Main tab to start experiments.")
+                return
+            
+            # Check if experiment name is set in MainTab
+            exp_name = self.main_tab_ref.exp_name_entry.get().strip()
+            if not exp_name:
+                messagebox.showwarning('Warning', 
+                    'Please enter an experiment name in the Main tab before running program.\n\n'
+                    'The program will use the Main tab for recording and monitoring.')
+                return
+            
+            # Call the wrapper method (doesn't change existing MainTab behavior)
+            success = self.main_tab_ref.start_recording_from_program_tab(experiment_program)
+            
+            if success:
                 if self.update_queue:
-                    self.update_queue.put(('UPDATE_PROGRAM_STATUS', "Running program..."))
-                threading.Thread(target=self.run_program_thread,
-                               args=(experiment_program,),
-                               daemon=True).start()
+                    self.update_queue.put(('UPDATE_PROGRAM_STATUS', 
+                        f"Program started via Main tab: {len(experiment_program)} steps"))
             else:
-                messagebox.showerror('Error', "Invalid program format")
+                messagebox.showerror('Error', 
+                    'Failed to start program. Please check:\n'
+                    '1. Experiment name is valid\n'
+                    '2. All program steps are valid')
+                
         except Exception as e:
             messagebox.showerror('Error', f"Error running program: {e}")
+            import traceback
+            traceback.print_exc()
     
     def stop_program(self):
-        """Stop program"""
-        self.exp_manager.stop_experiment()
-        if self.update_queue:
-            self.update_queue.put(('UPDATE_PROGRAM_STATUS', "Program stopped"))
+        """Stop program - triggers MainTab.stop_recording()"""
+        if self.main_tab_ref:
+            # Use existing stop_recording() method - no changes needed!
+            self.main_tab_ref.stop_recording()
+            if self.update_queue:
+                self.update_queue.put(('UPDATE_PROGRAM_STATUS', "Program stopped via Main tab"))
+        else:
+            # Fallback to direct stop (for backward compatibility)
+            self.exp_manager.stop_experiment()
+            if self.update_queue:
+                self.update_queue.put(('UPDATE_PROGRAM_STATUS', "Program stopped"))
     
     def parse_program(self, program_text):
         """Parse program text into experiment steps"""

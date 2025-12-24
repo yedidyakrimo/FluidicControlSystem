@@ -114,6 +114,8 @@ class Keithley2450(HardwareBase):
         try:
             print(f"Attempting to connect to: {resource}...")
             self.smu = self.rm.open_resource(resource)
+            # Set timeout to 5000ms (5 seconds) to prevent hanging
+            self.smu.timeout = 5000
             print(f"Resource opened successfully")
             
             # Test connection
@@ -152,6 +154,8 @@ class Keithley2450(HardwareBase):
                 print(f"  - {resource}")
                 try:
                     inst = self.rm.open_resource(resource)
+                    # Set timeout to 2000ms (2 seconds) for device detection
+                    inst.timeout = 2000
                     idn = inst.query(self.scpi.identify())
                     print(f"    IDN: {idn.strip()}")
                     
@@ -159,6 +163,8 @@ class Keithley2450(HardwareBase):
                     if "2450" in idn.upper() or "KEITHLEY" in idn.upper():
                         print(f"    ✓ Found Keithley 2450 SMU at {resource}")
                         self.smu = inst
+                        # Set timeout to 5000ms (5 seconds) for normal operations
+                        self.smu.timeout = 5000
                         self.resource = resource
                         self.connected = True
                         self.simulation_mode = False
