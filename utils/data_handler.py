@@ -17,6 +17,7 @@ class DataHandler:
         self.writer = None
         self.custom_filename = None  # Store custom filename for recording
         self.metadata = None  # Store experiment metadata
+        self.file_closed = False  # Flag to indicate file was permanently closed
 
         # Check if the data folder exists; if not, create it.
         if not os.path.exists(self.data_folder):
@@ -51,6 +52,9 @@ class DataHandler:
             filename = f"experiment_data_{timestamp}.csv"
             
         self.file_path = os.path.join(self.data_folder, filename)
+
+        # Reset file_closed flag for new file
+        self.file_closed = False
 
         # Open the file in write mode ('w') with a newline='' argument to prevent empty rows.
         self.file = open(self.file_path, 'w', newline='')
@@ -97,6 +101,9 @@ class DataHandler:
         if self.writer and data_point:
             try:
                 self.writer.writerow(data_point)
+                # CRITICAL: Flush immediately to disk for real-time viewing
+                if self.file:
+                    self.file.flush()
                 # You can add a print statement for debugging if needed:
                 # print(f"Appended data: {data_point}")
             except Exception as e:
@@ -132,11 +139,15 @@ class DataHandler:
 
     # This function closes the file. It's crucial to call this at the end of every experiment.
     def close_file(self):
+        """Close the file and mark it as permanently closed"""
         if self.file:
+            # Ensure all data is flushed before closing
+            self.file.flush()
             self.file.close()
             self.file = None
             self.writer = None
-            print(f"Data file closed.")
+            self.file_closed = True  # Mark as closed
+            print(f"Data file closed and sealed: {self.file_path}")
 
     def export_to_excel(self, output_path=None):
         """

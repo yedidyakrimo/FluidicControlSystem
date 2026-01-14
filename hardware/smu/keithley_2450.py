@@ -517,17 +517,17 @@ class Keithley2450(HardwareBase):
         
         IMPORTANT (based on real 2450 behaviour):
         - READ? returns a SINGLE measured value, according to SENS:FUNC:
-          * In our I-V setup (Source Voltage / Measure Current) we use SENS:FUNC "CURR",
-            so READ? returns **current only**.
-          * In current-source mode (Source Current / Measure Voltage) we use SENS:FUNC "VOLT",
+          * In voltage mode (Source Current / Measure Voltage) we use SENS:FUNC "VOLT",
             so READ? returns **voltage only**.
+          * In current mode (Source Voltage / Measure Current) we use SENS:FUNC "CURR",
+            so READ? returns **current only**.
         - The complementary (non-measured) value is taken from the programmed source:
-          * Voltage mode:  voltage = SOUR:VOLT? (setpoint), current = READ? (measured)
-          * Current mode:  current = SOUR:CURR? (setpoint), voltage = READ? (measured)
+          * Voltage mode:  voltage = READ? (measured), current = SOUR:CURR? (setpoint)
+          * Current mode:  current = READ? (measured), voltage = SOUR:VOLT? (setpoint)
         
         Args:
-            mode: "voltage" (Source Voltage / Measure Current)
-                  OR "current" (Source Current / Measure Voltage)
+            mode: "voltage" (Source Current / Measure Voltage - למדוד מתח)
+                  OR "current" (Source Voltage / Measure Current - למדוד זרם)
         
         Returns:
             dict with keys:
@@ -542,28 +542,7 @@ class Keithley2450(HardwareBase):
             data = {}
             
             if mode == "voltage":
-                # I-V mode: Source V, Measure I
-                # READ? returns current (because SENS:FUNC "CURR")
-                read_string = self.smu.query(self.scpi.read_data()).strip()
-                try:
-                    current = float(read_string)
-                except ValueError as e:
-                    print(f"Warning: Could not parse READ? current response: {read_string}, error: {e}")
-                    return None
-                
-                # Voltage is the programmed source voltage (setpoint)
-                try:
-                    v_str = self.smu.query(self.scpi.query_voltage()).strip()
-                    voltage = float(v_str)
-                except Exception as e:
-                    print(f"Warning: Could not read programmed voltage (SOUR:VOLT?): {e}")
-                    return None
-                
-                data["voltage"] = voltage
-                data["current"] = current
-            
-            elif mode == "current":
-                # Current source mode: Source I, Measure V
+                # Voltage mode: Source I, Measure V (למדוד מתח)
                 # READ? returns voltage (because SENS:FUNC "VOLT")
                 read_string = self.smu.query(self.scpi.read_data()).strip()
                 try:
@@ -578,6 +557,27 @@ class Keithley2450(HardwareBase):
                     current = float(i_str)
                 except Exception as e:
                     print(f"Warning: Could not read programmed current (SOUR:CURR?): {e}")
+                    return None
+                
+                data["voltage"] = voltage
+                data["current"] = current
+            
+            elif mode == "current":
+                # Current mode: Source V, Measure I (למדוד זרם)
+                # READ? returns current (because SENS:FUNC "CURR")
+                read_string = self.smu.query(self.scpi.read_data()).strip()
+                try:
+                    current = float(read_string)
+                except ValueError as e:
+                    print(f"Warning: Could not parse READ? current response: {read_string}, error: {e}")
+                    return None
+                
+                # Voltage is the programmed source voltage (setpoint)
+                try:
+                    v_str = self.smu.query(self.scpi.query_voltage()).strip()
+                    voltage = float(v_str)
+                except Exception as e:
+                    print(f"Warning: Could not read programmed voltage (SOUR:VOLT?): {e}")
                     return None
                 
                 data["voltage"] = voltage

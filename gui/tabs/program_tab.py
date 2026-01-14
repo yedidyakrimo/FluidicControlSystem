@@ -3,9 +3,10 @@ Program Tab - Write and run experiment programs
 """
 
 import customtkinter as ctk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, ttk, simpledialog
 import threading
 import time
+import pandas as pd
 
 from gui.tabs.base_tab import BaseTab
 
@@ -19,72 +20,71 @@ class ProgramTab(BaseTab):
         super().__init__(parent, hw_controller, data_handler, exp_manager, update_queue)
         self.main_tab_ref = main_tab_ref  # Reference to MainTab for integration
         
+        # Store table data
+        self.table_data = []  # List of dicts: [{'step': 1, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main'}, ...]
+        
         # Create widgets
         self.create_widgets()
     
     def create_widgets(self):
         """Create Program tab widgets"""
-        # Program Editor
-        editor_frame = ctk.CTkFrame(self)
-        editor_frame.pack(fill='both', expand=True, padx=10, pady=5)
-        ctk.CTkLabel(editor_frame, text="Program Editor", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        # Program Table (Excel-like interface)
+        table_frame = ctk.CTkFrame(self)
+        table_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        ctk.CTkLabel(table_frame, text="Program Table", font=('Helvetica', 14, 'bold')).pack(pady=5)
         
-        self.program_editor = ctk.CTkTextbox(editor_frame, width=800, height=300)
-        default_program = '''# Write your experiment program here
-# Format: stepN: flow=X.X, duration=XX, temp=XX, valve=main/rinsing
-# 
-# ============================================
-# Example 1: Standard Test - Basic Flow Test
-# ============================================
-# step1: flow=1.5, duration=60, temp=25, valve=main
-# step2: flow=2.0, duration=30, temp=25, valve=main
-# step3: flow=0.5, duration=60, temp=25, valve=main
-#
-# ============================================
-# Example 2: Temperature Ramp - Gradual Temp Change
-# ============================================
-# step1: flow=1.0, duration=60, temp=20, valve=main
-# step2: flow=1.0, duration=60, temp=30, valve=main
-# step3: flow=1.0, duration=60, temp=40, valve=main
-# step4: flow=1.0, duration=60, temp=50, valve=main
-#
-# ============================================
-# Example 3: Flow Ramp - Gradual Flow Increase
-# ============================================
-# step1: flow=0.5, duration=60, temp=25, valve=main
-# step2: flow=1.0, duration=60, temp=25, valve=main
-# step3: flow=1.5, duration=60, temp=25, valve=main
-# step4: flow=2.0, duration=60, temp=25, valve=main
-# step5: flow=0.5, duration=60, temp=25, valve=main
-#
-# ============================================
-# Example 4: Valve Switching Test
-# ============================================
-# step1: flow=1.5, duration=60, temp=25, valve=main
-# step2: flow=1.5, duration=30, temp=25, valve=rinsing
-# step3: flow=1.5, duration=60, temp=25, valve=main
-# step4: flow=2.0, duration=30, temp=25, valve=rinsing
-#
-# ============================================
-# Example 5: Complex Multi-Step Experiment
-# ============================================
-# step1: flow=1.0, duration=120, temp=20, valve=main
-# step2: flow=1.5, duration=90, temp=25, valve=main
-# step3: flow=1.5, duration=60, temp=25, valve=rinsing
-# step4: flow=2.0, duration=60, temp=30, valve=main
-# step5: flow=0.5, duration=120, temp=20, valve=main
-#
-# ============================================
-# Instructions:
-# - Each step must have: flow, duration, and valve
-# - Temperature (temp) is optional, defaults to 25°C
-# - Flow rate in ml/min, duration in seconds
-# - Temperature in Celsius
-# - Valve: 'main' or 'rinsing'
-# ============================================
-'''
-        self.program_editor.insert('1.0', default_program)
-        self.program_editor.pack(fill='both', expand=True, padx=5, pady=5)
+        # Create Treeview with scrollbars
+        table_container = ctk.CTkFrame(table_frame)
+        table_container.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Scrollbars
+        v_scrollbar = ttk.Scrollbar(table_container, orient='vertical')
+        v_scrollbar.pack(side='right', fill='y')
+        
+        h_scrollbar = ttk.Scrollbar(table_container, orient='horizontal')
+        h_scrollbar.pack(side='bottom', fill='x')
+        
+        # Treeview table
+        self.program_table = ttk.Treeview(
+            table_container,
+            columns=('Step', 'Duration (s)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve'),
+            show='headings',
+            yscrollcommand=v_scrollbar.set,
+            xscrollcommand=h_scrollbar.set,
+            height=12
+        )
+        
+        # Configure scrollbars
+        v_scrollbar.config(command=self.program_table.yview)
+        h_scrollbar.config(command=self.program_table.xview)
+        
+        # Define column headings and widths
+        self.program_table.heading('Step', text='Step')
+        self.program_table.heading('Duration (s)', text='Duration (s)')
+        self.program_table.heading('Flow Rate (ml/min)', text='Flow Rate (ml/min)')
+        self.program_table.heading('Measurement Mode', text='Measurement Mode')
+        self.program_table.heading('Valve', text='Valve')
+        
+        self.program_table.column('Step', width=60, anchor='center')
+        self.program_table.column('Duration (s)', width=120, anchor='center')
+        self.program_table.column('Flow Rate (ml/min)', width=150, anchor='center')
+        self.program_table.column('Measurement Mode', width=180, anchor='center')
+        self.program_table.column('Valve', width=100, anchor='center')
+        
+        self.program_table.pack(side='left', fill='both', expand=True)
+        
+        # Bind double-click for editing
+        self.program_table.bind('<Double-1>', self.on_cell_double_click)
+        self.program_table.bind('<Button-1>', self.on_cell_click)
+        
+        # Table control buttons
+        table_control_frame = ctk.CTkFrame(table_frame)
+        table_control_frame.pack(fill='x', padx=5, pady=5)
+        
+        self.create_blue_button(table_control_frame, text='➕ Add Step', command=self.add_step_row, width=100).pack(side='left', padx=2)
+        self.create_blue_button(table_control_frame, text='➖ Delete Step', command=self.delete_selected_row, width=100).pack(side='left', padx=2)
+        self.create_blue_button(table_control_frame, text='🗑️ Clear All', command=self.clear_table, width=100).pack(side='left', padx=2)
+        self.create_blue_button(table_control_frame, text='🔄 Renumber Steps', command=self.renumber_steps, width=120).pack(side='left', padx=2)
         
         # Program Control
         control_frame = ctk.CTkFrame(self)
@@ -93,10 +93,10 @@ class ProgramTab(BaseTab):
         
         control_btn_frame = ctk.CTkFrame(control_frame)
         control_btn_frame.pack(pady=5)
-        self.create_blue_button(control_btn_frame, text='Load Program', command=self.load_program, width=120).pack(side='left', padx=5)
-        self.create_blue_button(control_btn_frame, text='Save Program', command=self.save_program, width=120).pack(side='left', padx=5)
-        self.create_blue_button(control_btn_frame, text='Run Program', command=self.run_program, width=120).pack(side='left', padx=5)
-        self.create_blue_button(control_btn_frame, text='Stop Program', command=self.stop_program, width=120,
+        self.create_blue_button(control_btn_frame, text='📂 Load from Excel', command=self.load_from_excel, width=140).pack(side='left', padx=5)
+        self.create_blue_button(control_btn_frame, text='💾 Save to Excel', command=self.save_to_excel, width=140).pack(side='left', padx=5)
+        self.create_blue_button(control_btn_frame, text='▶️ Run Program', command=self.run_program, width=120).pack(side='left', padx=5)
+        self.create_blue_button(control_btn_frame, text='⏹️ Stop Program', command=self.stop_program, width=120,
                                 fg_color='#0D47A1', hover_color='#0C3A7A').pack(side='left', padx=5)
         
         # Program Library
@@ -110,7 +110,7 @@ class ProgramTab(BaseTab):
         self.program_var = ctk.StringVar(value="Standard Test")
         self.program_optionmenu = ctk.CTkOptionMenu(
             library_content, 
-            values=["Standard Test", "Temperature Ramp", "Flow Ramp", "Valve Switching Test", "Complex Multi-Step"],
+            values=["Standard Test", "Flow Ramp", "Valve Switching Test", "Measurement Mode Switch"],
             variable=self.program_var,
             width=300
         )
@@ -129,54 +129,309 @@ class ProgramTab(BaseTab):
         ctk.CTkLabel(status_content, text='Status:', width=80).pack(side='left', padx=5)
         self.program_status_label = ctk.CTkLabel(status_content, text='Ready', width=400)
         self.program_status_label.pack(side='left', padx=5)
+        
+        # Initialize with one empty row
+        self.add_step_row()
     
-    def load_program(self):
-        """Load program from file"""
+    def add_step_row(self):
+        """Add a new step row to the table"""
+        step_num = len(self.table_data) + 1
+        new_step = {
+            'step': step_num,
+            'duration': 60,
+            'flow_rate': 1.5,
+            'measurement_mode': 'voltage',
+            'valve': 'main'
+        }
+        self.table_data.append(new_step)
+        self.update_table_display()
+    
+    def delete_selected_row(self):
+        """Delete the selected row from the table"""
+        selected = self.program_table.selection()
+        if not selected:
+            messagebox.showwarning('Warning', 'Please select a row to delete.')
+            return
+        
+        for item in selected:
+            # Get step number from the row
+            values = self.program_table.item(item, 'values')
+            if values:
+                step_num = int(values[0])
+                # Remove from data
+                self.table_data = [s for s in self.table_data if s['step'] != step_num]
+        
+        self.renumber_steps()
+        self.update_table_display()
+    
+    def clear_table(self):
+        """Clear all rows from the table"""
+        if messagebox.askyesno('Confirm', 'Are you sure you want to clear all steps?'):
+            self.table_data.clear()
+            self.update_table_display()
+            # Add one empty row
+            self.add_step_row()
+    
+    def renumber_steps(self):
+        """Renumber all steps sequentially"""
+        for i, step in enumerate(self.table_data, 1):
+            step['step'] = i
+        self.update_table_display()
+    
+    def update_table_display(self):
+        """Update the table display from table_data"""
+        # Clear existing items
+        for item in self.program_table.get_children():
+            self.program_table.delete(item)
+        
+        # Sort by step number
+        sorted_data = sorted(self.table_data, key=lambda x: x['step'])
+        
+        # Insert rows
+        for step in sorted_data:
+            self.program_table.insert('', 'end', values=(
+                step['step'],
+                step['duration'],
+                step['flow_rate'],
+                step['measurement_mode'],
+                step['valve']
+            ))
+    
+    def on_cell_click(self, event):
+        """Handle cell click - prevent default selection behavior"""
+        region = self.program_table.identify_region(event.x, event.y)
+        if region == 'cell':
+            column = self.program_table.identify_column(event.x)
+            # Allow selection for deletion, but we'll handle editing separately
+    
+    def on_cell_double_click(self, event):
+        """Handle double-click on cell for editing"""
+        region = self.program_table.identify_region(event.x, event.y)
+        if region == 'cell':
+            item = self.program_table.selection()[0]
+            column = self.program_table.identify_column(event.x)
+            column_index = int(column.replace('#', '')) - 1  # Convert to 0-based index
+            
+            # Get current values
+            values = self.program_table.item(item, 'values')
+            step_num = int(values[0])
+            
+            # Find the step in table_data
+            step = next((s for s in self.table_data if s['step'] == step_num), None)
+            if not step:
+                return
+            
+            # Column names mapping
+            column_names = ['Step', 'Duration (s)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve']
+            column_name = column_names[column_index]
+            
+            # Edit based on column
+            self.edit_cell(item, column_index, column_name, step)
+    
+    def edit_cell(self, item, column_index, column_name, step):
+        """Edit a cell value"""
+        current_value = self.program_table.item(item, 'values')[column_index]
+        
+        if column_name == 'Step':
+            # Step number - use renumber instead
+            messagebox.showinfo('Info', 'Use "Renumber Steps" button to renumber steps.')
+            return
+        
+        elif column_name == 'Duration (s)':
+            # Duration - numeric input
+            new_value = simpledialog.askstring(
+                "Edit Duration",
+                "Enter Duration (seconds):",
+                initialvalue=str(current_value)
+            )
+            if new_value is not None and new_value.strip():
+                try:
+                    duration = int(float(new_value))
+                    if duration < 0:
+                        messagebox.showerror('Error', 'Duration must be positive.')
+                        return
+                    step['duration'] = duration
+                except ValueError:
+                    messagebox.showerror('Error', 'Invalid duration value.')
+                    return
+        
+        elif column_name == 'Flow Rate (ml/min)':
+            # Flow rate - numeric input with validation
+            new_value = simpledialog.askstring(
+                "Edit Flow Rate",
+                "Enter Flow Rate (ml/min, max 5.0):",
+                initialvalue=str(current_value)
+            )
+            if new_value is not None and new_value.strip():
+                try:
+                    flow_rate = float(new_value)
+                    if flow_rate < 0:
+                        messagebox.showerror('Error', 'Flow rate cannot be negative.')
+                        return
+                    if flow_rate > 5.0:
+                        messagebox.showwarning('Warning', f'Flow rate {flow_rate} exceeds maximum of 5.0. Setting to 5.0.')
+                        flow_rate = 5.0
+                    step['flow_rate'] = flow_rate
+                except ValueError:
+                    messagebox.showerror('Error', 'Invalid flow rate value.')
+                    return
+        
+        elif column_name == 'Measurement Mode':
+            # Measurement mode - dropdown
+            new_value = simpledialog.askstring(
+                "Edit Measurement Mode",
+                "Enter Measurement Mode (voltage/current):",
+                initialvalue=str(current_value)
+            )
+            if new_value is not None and new_value.strip():
+                new_value = new_value.lower().strip()
+                if new_value in ['voltage', 'current']:
+                    step['measurement_mode'] = new_value
+                else:
+                    messagebox.showerror('Error', 'Measurement mode must be "voltage" or "current".')
+                    return
+        
+        elif column_name == 'Valve':
+            # Valve - dropdown
+            new_value = simpledialog.askstring(
+                "Edit Valve",
+                "Enter Valve (main/rinsing):",
+                initialvalue=str(current_value)
+            )
+            if new_value is not None and new_value.strip():
+                new_value = new_value.lower().strip()
+                if new_value in ['main', 'rinsing']:
+                    step['valve'] = new_value
+                else:
+                    messagebox.showerror('Error', 'Valve must be "main" or "rinsing".')
+                    return
+        
+        # Update display
+        self.update_table_display()
+    
+    def table_to_program(self):
+        """Convert table data to experiment program format"""
+        program = []
+        sorted_data = sorted(self.table_data, key=lambda x: x['step'])
+        
+        for step in sorted_data:
+            step_dict = {
+                'duration': step['duration'],
+                'flow_rate': step['flow_rate'],
+                'valve_setting': {'valve1': True, 'valve2': False} if step['valve'] == 'main' else {'valve1': False, 'valve2': True}
+            }
+            
+            # Add measurement_mode if specified
+            if step.get('measurement_mode'):
+                step_dict['measurement_mode'] = step['measurement_mode']
+            
+            program.append(step_dict)
+        
+        return program
+    
+    def load_from_excel(self):
+        """Load program from Excel/CSV file"""
         try:
             filename = filedialog.askopenfilename(
-                filetypes=[('Text Files', '*.txt')]
+                filetypes=[('Excel Files', '*.xlsx'), ('CSV Files', '*.csv'), ('All Files', '*.*')]
             )
             if filename:
-                with open(filename, 'r') as f:
-                    program_text = f.read()
-                self.program_editor.delete('1.0', 'end')
-                self.program_editor.insert('1.0', program_text)
+                if filename.endswith('.csv'):
+                    df = pd.read_csv(filename)
+                else:
+                    df = pd.read_excel(filename)
+                
+                # Clear existing data
+                self.table_data.clear()
+                
+                # Convert DataFrame to table_data format
+                for idx, row in df.iterrows():
+                    step = {
+                        'step': int(row.get('Step', idx + 1)),
+                        'duration': int(row.get('Duration (s)', 60)),
+                        'flow_rate': float(row.get('Flow Rate (ml/min)', 1.5)),
+                        'measurement_mode': str(row.get('Measurement Mode', 'voltage')).lower(),
+                        'valve': str(row.get('Valve', 'main')).lower()
+                    }
+                    # Validate
+                    if step['measurement_mode'] not in ['voltage', 'current']:
+                        step['measurement_mode'] = 'voltage'
+                    if step['valve'] not in ['main', 'rinsing']:
+                        step['valve'] = 'main'
+                    if step['flow_rate'] > 5.0:
+                        step['flow_rate'] = 5.0
+                    if step['flow_rate'] < 0:
+                        step['flow_rate'] = 0.0
+                    
+                    self.table_data.append(step)
+                
+                self.renumber_steps()
+                self.update_table_display()
+                
                 if self.update_queue:
                     self.update_queue.put(('UPDATE_PROGRAM_STATUS', f"Loaded: {filename}"))
         except Exception as e:
-            messagebox.showerror('Error', f"Error loading program: {e}")
+            messagebox.showerror('Error', f"Error loading file: {e}")
     
-    def save_program(self):
-        """Save program to file"""
+    def save_to_excel(self):
+        """Save program to Excel/CSV file"""
         try:
-            program_text = self.program_editor.get('1.0', 'end-1c')
+            if not self.table_data:
+                messagebox.showwarning('Warning', 'No program data to save.')
+                return
+            
             filename = filedialog.asksaveasfilename(
-                defaultextension='.txt',
-                filetypes=[('Text Files', '*.txt')]
+                defaultextension='.xlsx',
+                filetypes=[('Excel Files', '*.xlsx'), ('CSV Files', '*.csv')]
             )
             if filename:
-                with open(filename, 'w') as f:
-                    f.write(program_text)
+                # Convert table_data to DataFrame
+                sorted_data = sorted(self.table_data, key=lambda x: x['step'])
+                df = pd.DataFrame(sorted_data)
+                df.columns = ['Step', 'Duration (s)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve']
+                
+                if filename.endswith('.csv'):
+                    df.to_csv(filename, index=False)
+                else:
+                    df.to_excel(filename, index=False)
+                
                 if self.update_queue:
                     self.update_queue.put(('UPDATE_PROGRAM_STATUS', f"Saved: {filename}"))
         except Exception as e:
-            messagebox.showerror('Error', f"Error saving program: {e}")
+            messagebox.showerror('Error', f"Error saving file: {e}")
     
     def load_selected(self):
         """Load selected program template"""
         try:
             selected = self.program_var.get()
             if selected:
-                program_templates = {
-                    'Standard Test': '# Standard Test - Basic Flow Test\nstep1: flow=1.5, duration=60, temp=25, valve=main\nstep2: flow=2.0, duration=30, temp=25, valve=main\nstep3: flow=0.5, duration=60, temp=25, valve=main',
-                    'Temperature Ramp': '# Temperature Ramp - Gradual Temperature Change\nstep1: flow=1.0, duration=60, temp=20, valve=main\nstep2: flow=1.0, duration=60, temp=30, valve=main\nstep3: flow=1.0, duration=60, temp=40, valve=main\nstep4: flow=1.0, duration=60, temp=50, valve=main',
-                    'Flow Ramp': '# Flow Ramp - Gradual Flow Increase\nstep1: flow=0.5, duration=60, temp=25, valve=main\nstep2: flow=1.0, duration=60, temp=25, valve=main\nstep3: flow=1.5, duration=60, temp=25, valve=main\nstep4: flow=2.0, duration=60, temp=25, valve=main\nstep5: flow=0.5, duration=60, temp=25, valve=main',
-                    'Valve Switching Test': '# Valve Switching Test\nstep1: flow=1.5, duration=60, temp=25, valve=main\nstep2: flow=1.5, duration=30, temp=25, valve=rinsing\nstep3: flow=1.5, duration=60, temp=25, valve=main\nstep4: flow=2.0, duration=30, temp=25, valve=rinsing',
-                    'Complex Multi-Step': '# Complex Multi-Step Experiment\nstep1: flow=1.0, duration=120, temp=20, valve=main\nstep2: flow=1.5, duration=90, temp=25, valve=main\nstep3: flow=1.5, duration=60, temp=25, valve=rinsing\nstep4: flow=2.0, duration=60, temp=30, valve=main\nstep5: flow=0.5, duration=120, temp=20, valve=main'
+                templates = {
+                    'Standard Test': [
+                        {'step': 1, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main'},
+                        {'step': 2, 'duration': 30, 'flow_rate': 2.0, 'measurement_mode': 'voltage', 'valve': 'main'},
+                        {'step': 3, 'duration': 60, 'flow_rate': 0.5, 'measurement_mode': 'voltage', 'valve': 'main'}
+                    ],
+                    'Flow Ramp': [
+                        {'step': 1, 'duration': 60, 'flow_rate': 0.5, 'measurement_mode': 'voltage', 'valve': 'main'},
+                        {'step': 2, 'duration': 60, 'flow_rate': 1.0, 'measurement_mode': 'voltage', 'valve': 'main'},
+                        {'step': 3, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main'},
+                        {'step': 4, 'duration': 60, 'flow_rate': 2.0, 'measurement_mode': 'voltage', 'valve': 'main'}
+                    ],
+                    'Valve Switching Test': [
+                        {'step': 1, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main'},
+                        {'step': 2, 'duration': 30, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'rinsing'},
+                        {'step': 3, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main'}
+                    ],
+                    'Measurement Mode Switch': [
+                        {'step': 1, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main'},
+                        {'step': 2, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'current', 'valve': 'main'},
+                        {'step': 3, 'duration': 60, 'flow_rate': 2.0, 'measurement_mode': 'voltage', 'valve': 'main'}
+                    ]
                 }
-                if selected in program_templates:
-                    self.program_editor.delete('1.0', 'end')
-                    self.program_editor.insert('1.0', program_templates[selected])
+                
+                if selected in templates:
+                    self.table_data = templates[selected].copy()
+                    self.update_table_display()
                     if self.update_queue:
                         self.update_queue.put(('UPDATE_PROGRAM_STATUS', f"Loaded template: {selected}"))
         except Exception as e:
@@ -185,12 +440,11 @@ class ProgramTab(BaseTab):
     def run_program(self):
         """Run program - triggers MainTab.start_recording_from_program_tab()"""
         try:
-            # Parse program
-            program_text = self.program_editor.get('1.0', 'end-1c')
-            experiment_program = self.parse_program(program_text)
+            # Convert table to program format
+            experiment_program = self.table_to_program()
             
             if not experiment_program:
-                messagebox.showerror('Error', "Invalid program format or empty program")
+                messagebox.showerror('Error', "No program steps defined. Please add at least one step.")
                 return
             
             # Check if MainTab reference exists
@@ -208,7 +462,7 @@ class ProgramTab(BaseTab):
                     'The program will use the Main tab for recording and monitoring.')
                 return
             
-            # Call the wrapper method (doesn't change existing MainTab behavior)
+            # Call the wrapper method
             success = self.main_tab_ref.start_recording_from_program_tab(experiment_program)
             
             if success:
@@ -229,166 +483,10 @@ class ProgramTab(BaseTab):
     def stop_program(self):
         """Stop program - triggers MainTab.stop_recording()"""
         if self.main_tab_ref:
-            # Use existing stop_recording() method - no changes needed!
             self.main_tab_ref.stop_recording()
             if self.update_queue:
                 self.update_queue.put(('UPDATE_PROGRAM_STATUS', "Program stopped via Main tab"))
         else:
-            # Fallback to direct stop (for backward compatibility)
             self.exp_manager.stop_experiment()
             if self.update_queue:
                 self.update_queue.put(('UPDATE_PROGRAM_STATUS', "Program stopped"))
-    
-    def parse_program(self, program_text):
-        """Parse program text into experiment steps"""
-        steps = []
-        if not program_text or not program_text.strip():
-            return steps
-            
-        lines = program_text.split('\n')
-        
-        for line in lines:
-            line = line.strip()
-            if line.startswith('step') and ':' in line:
-                try:
-                    step_data = {}
-                    parts = line.split(':')[1].strip().split(',')
-                    
-                    for part in parts:
-                        part = part.strip()
-                        if '=' in part:
-                            key, value = part.split('=')
-                            key = key.strip()
-                            value = value.strip()
-                            
-                            if key == 'flow':
-                                flow_rate = float(value)
-                                # Enforce maximum flow rate of 5.0 ml/min
-                                MAX_FLOW_RATE = 5.0
-                                if flow_rate > MAX_FLOW_RATE:
-                                    print(f"Warning: Flow rate {flow_rate} ml/min exceeds maximum of {MAX_FLOW_RATE} ml/min. Setting to {MAX_FLOW_RATE} ml/min.")
-                                    flow_rate = MAX_FLOW_RATE
-                                if flow_rate < 0:
-                                    print(f"Warning: Flow rate cannot be negative. Setting to 0.")
-                                    flow_rate = 0.0
-                                step_data['flow_rate'] = flow_rate
-                            elif key == 'duration':
-                                step_data['duration'] = int(value)
-                            elif key == 'temp':
-                                step_data['temperature'] = float(value)
-                            elif key == 'valve':
-                                if value == 'main':
-                                    step_data['valve_setting'] = {'valve1': True, 'valve2': False}
-                                elif value == 'rinsing':
-                                    step_data['valve_setting'] = {'valve1': False, 'valve2': True}
-                    
-                    if 'flow_rate' in step_data and 'duration' in step_data:
-                        steps.append(step_data)
-                        
-                except (ValueError, IndexError) as e:
-                    print(f"Error parsing line: {line}, Error: {e}")
-                    continue
-        
-        return steps
-    
-    def run_program_thread(self, experiment_program):
-        """Run program from Write Program tab"""
-        self.exp_manager.is_running = True
-        if self.update_queue:
-            self.update_queue.put(('UPDATE_PROGRAM_STATUS', 'Starting program...'))
-        
-        self.data_handler.create_new_file()
-        program_start_time = time.time()
-        
-        for step in experiment_program:
-            if not self.exp_manager.is_running:
-                break
-            
-            duration = step.get('duration')
-            flow_rate = step.get('flow_rate')
-            temperature = step.get('temperature', 25.0)
-            valve_setting = step.get('valve_setting', {'valve1': True, 'valve2': False})
-            
-            if self.update_queue:
-                self.update_queue.put(('UPDATE_PROGRAM_STATUS', f"Executing step: Duration={duration}s, Flow Rate={flow_rate} ml/min, Temp={temperature}°C"))
-            
-            # Set pump flow rate and start the pump
-            self.exp_manager.hw_controller.set_pump_flow_rate(flow_rate)
-            time.sleep(0.3)  # Wait for pump to process flow rate setting
-            self.exp_manager.hw_controller.start_pump()  # Start the pump
-            time.sleep(0.5)  # Wait for pump to actually start running
-            self.exp_manager.hw_controller.set_heating_plate_temp(temperature)
-            self.exp_manager.hw_controller.set_valves(valve_setting['valve1'], valve_setting['valve2'])
-            
-            start_time = time.time()
-            
-            while time.time() - start_time < duration and self.exp_manager.is_running:
-                if not self.exp_manager.perform_safety_checks():
-                    break
-                
-                pump_data = self.exp_manager.hw_controller.read_pump_data()
-                pressure = self.exp_manager.hw_controller.read_pressure_sensor()
-                temperature_read = self.exp_manager.hw_controller.read_temperature_sensor()
-                level = self.exp_manager.hw_controller.read_level_sensor()
-                
-                current_time = time.time()
-                elapsed_time_from_start = current_time - program_start_time
-                remaining_time = duration - (current_time - start_time)
-                
-                if self.update_queue:
-                    self.update_queue.put(('UPDATE_STATUS', f"Running: {remaining_time:.0f}s remaining, Flow={flow_rate}ml/min"))
-                
-                # Update data arrays (thread-safe with lock - BUG FIX #1)
-                with self.data_lock:
-                    self.flow_x_data.append(elapsed_time_from_start)
-                    self.flow_y_data.append(pump_data['flow'])
-                    self.pressure_x_data.append(elapsed_time_from_start)
-                    # FIXED: Handle None like temperature
-                    if pressure is not None:
-                        self.pressure_y_data.append(pressure)
-                    else:
-                        self.pressure_y_data.append(float('nan'))
-                    self.temp_x_data.append(elapsed_time_from_start)
-                    self.temp_y_data.append(temperature_read)
-                    self.level_x_data.append(elapsed_time_from_start)
-                    # FIXED: Handle None like temperature and pressure
-                    if level is not None:
-                        self.level_y_data.append(level * 100)
-                    else:
-                        self.level_y_data.append(float('nan'))
-                
-                data_point = {
-                    "time": elapsed_time_from_start,
-                    "flow_setpoint": flow_rate,
-                    "pump_flow_read": pump_data['flow'],
-                    "pressure_read": pressure if pressure is not None else "",  # FIXED: Handle None
-                    "temp_read": temperature_read if temperature_read is not None else "",
-                    "level_read": level if level is not None else "",
-                    "program_step": len(experiment_program)
-                }
-                self.data_handler.append_data(data_point)
-                
-                # Update graphs (thread-safe - BUG FIX #1)
-                if self.update_queue:
-                    # Make copies while holding lock
-                    with self.data_lock:
-                        flow_x_copy = list(self.flow_x_data)
-                        flow_y_copy = list(self.flow_y_data)
-                        pressure_x_copy = list(self.pressure_x_data)
-                        pressure_y_copy = list(self.pressure_y_data)
-                        temp_x_copy = list(self.temp_x_data)
-                        temp_y_copy = list(self.temp_y_data)
-                        level_x_copy = list(self.level_x_data)
-                        level_y_copy = list(self.level_y_data)
-                    
-                    self.update_queue.put(('UPDATE_GRAPH1', (flow_x_copy, flow_y_copy)))
-                    self.update_queue.put(('UPDATE_GRAPH2', (pressure_x_copy, pressure_y_copy)))
-                    self.update_queue.put(('UPDATE_GRAPH3', (temp_x_copy, temp_y_copy)))
-                    self.update_queue.put(('UPDATE_GRAPH4', (level_x_copy, level_y_copy)))
-                time.sleep(1)
-        
-        self.exp_manager.stop_experiment()
-        self.data_handler.close_file()
-        if self.update_queue:
-            self.update_queue.put(('UPDATE_PROGRAM_STATUS', 'Program completed.'))
-

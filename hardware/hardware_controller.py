@@ -180,8 +180,8 @@ class HardwareController:
     def configure_smu_mode_safe(self, mode, bias_value=0.0, current_limit=0.1, voltage_limit=20.0):
         """
         Safely switch SMU mode between:
-        - 'voltage': Source Voltage / Measure Current
-        - 'current': Source Current / Measure Voltage
+        - 'voltage': Source Current / Measure Voltage (למדוד מתח)
+        - 'current': Source Voltage / Measure Current (למדוד זרם)
 
         Sequence:
         1. Remember if output was ON.
@@ -211,15 +211,15 @@ class HardwareController:
 
             # 3. Apply new setup (these functions may turn output ON internally)
             if mode == "voltage":
-                # Source Voltage / Measure Current
-                self.setup_smu_for_iv_measurement(current_limit=current_limit)
-                # 4. Reset bias to 0 V
-                self.set_smu_voltage(0.0)
-            elif mode == "current":
-                # Source Current / Measure Voltage
+                # Voltage mode = Source Current / Measure Voltage (למדוד מתח)
                 self.setup_smu_for_current_source(voltage_limit=voltage_limit)
                 # 4. Reset bias to 0 A
                 self.set_smu_current(0.0)
+            elif mode == "current":
+                # Current mode = Source Voltage / Measure Current (למדוד זרם)
+                self.setup_smu_for_iv_measurement(current_limit=current_limit)
+                # 4. Reset bias to 0 V
+                self.set_smu_voltage(0.0)
             else:
                 print(f"Warning: Unknown SMU mode '{mode}'. Expected 'voltage' or 'current'.")
                 return False

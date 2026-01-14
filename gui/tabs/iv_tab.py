@@ -86,6 +86,42 @@ class IVTab(BaseTab):
         self.create_blue_button(smu_btn_frame, text='🔄 Refresh Status', command=self.refresh_smu_status, width=120, height=30).pack(side='left', padx=2)
         self.create_blue_button(smu_btn_frame, text='📋 List Devices', command=self.list_visa_devices, width=120, height=30).pack(side='left', padx=2)
         
+        # ========== PUMP CONTROL PANEL ==========
+        pump_status_frame = ctk.CTkFrame(left_frame)
+        pump_status_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(pump_status_frame, text="Vapourtec SF-10 Pump Status", 
+                     font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        pump_info_frame = ctk.CTkFrame(pump_status_frame)
+        pump_info_frame.pack(fill='x', padx=5, pady=5)
+        
+        # Status
+        ctk.CTkLabel(pump_info_frame, text='Status:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+        self.iv_pump_status_label = ctk.CTkLabel(pump_info_frame, text='Checking...', width=250, anchor='w')
+        self.iv_pump_status_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
+        
+        # Quick Flow Rate Setting
+        flow_quick_frame = ctk.CTkFrame(pump_status_frame)
+        flow_quick_frame.pack(fill='x', padx=5, pady=5)
+        ctk.CTkLabel(flow_quick_frame, text='Quick Flow Rate (ml/min):', width=150).pack(side='left', padx=5)
+        self.iv_flow_rate_entry = ctk.CTkEntry(flow_quick_frame, width=100)
+        self.iv_flow_rate_entry.insert(0, '1.5')
+        self.iv_flow_rate_entry.pack(side='left', padx=5)
+        self.iv_update_flow_btn = self.create_blue_button(flow_quick_frame, text='Update Flow',
+                                                          command=self.iv_update_flow, width=100)
+        self.iv_update_flow_btn.pack(side='left', padx=2)
+        
+        # Bind sync events for iv_flow_rate_entry (will be bound after iv_flow_entry is created)
+        
+        # Refresh button
+        pump_btn_frame = ctk.CTkFrame(pump_status_frame)
+        pump_btn_frame.pack(pady=5)
+        self.create_blue_button(pump_btn_frame, text='🔄 Refresh Status', 
+                               command=self.iv_refresh_pump_status, width=120, height=30).pack(side='left', padx=2)
+        
+        # Refresh pump status on startup
+        self.after(1500, self.iv_refresh_pump_status)
+        
         # Quick SMU Control
         smu_control_frame = ctk.CTkFrame(left_frame)
         smu_control_frame.pack(fill='x', pady=5)
@@ -186,6 +222,13 @@ class IVTab(BaseTab):
         self.iv_flow_entry.insert(0, '1.5')
         self.iv_flow_entry.grid(row=4, column=1, padx=5, pady=2)
         ctk.CTkLabel(params_grid, text='(Max: 5.0)', width=80, font=('Helvetica', 9), text_color='gray').grid(row=4, column=2, padx=2, pady=2)
+        
+        # Sync flow rate entries
+        self.iv_flow_entry.bind('<FocusOut>', self.iv_sync_flow_entries)
+        self.iv_flow_entry.bind('<Return>', self.iv_sync_flow_entries)
+        if hasattr(self, 'iv_flow_rate_entry'):
+            self.iv_flow_rate_entry.bind('<FocusOut>', self.iv_sync_flow_entries)
+            self.iv_flow_rate_entry.bind('<Return>', self.iv_sync_flow_entries)
         
         ctk.CTkLabel(params_grid, text='Valve setting:', width=120).grid(row=5, column=0, padx=5, pady=2)
         self.iv_valve_var = ctk.StringVar(value="main")
@@ -825,6 +868,99 @@ class IVTab(BaseTab):
         except Exception as e:
             messagebox.showerror('Error', f'Error turning off output: {e}')
     
+    # --- Pump Control Functions ---
+    def iv_refresh_pump_status(self):
+        """Refresh pump connection status"""
+        if hasattr(self, 'iv_pump_status_label'):
+            self.iv_pump_status_label.configure(text="Scanning...", text_color='orange')
+        threading.Thread(target=self._iv_run_refresh_pump_logic, daemon=True).start()
+    
+    def _iv_run_refresh_pump_logic(self):
+        """Background thread for pump status refresh"""
+        try:
+            pump_info = self.hw_controller.pump.get_info()
+            if not pump_info.get('connected', False):
+                # Try to reconnect
+                if hasattr(self.hw_controller.pump, 'force_reconnect'):
+                    self.hw_controller.pump.force_reconnect()
+                    time.sleep(2.0)
+                    pump_info = {
+                        "device_name": self.hw_controller.pump.device_name,
+                        "port": self.hw_controller.pump.port,
+                        "connected": True,
+                        "status": "Connected",
+                        "status_color": "green"
+                    }
+                else:
+                    pump_info = self.hw_controller.pump.get_info()
+            
+            self.after(0, lambda: self._iv_update_pump_ui(pump_info))
+        except Exception as e:
+            self.after(0, lambda: self._iv_update_pump_error(str(e)))
+    
+    def _iv_update_pump_ui(self, pump_info):
+        """Update pump UI"""
+        if hasattr(self, 'iv_pump_status_label'):
+            status_text = pump_info.get('status', 'Unknown')
+            status_color = pump_info.get('status_color', 'gray')
+            self.iv_pump_status_label.configure(text=status_text, text_color=status_color)
+    
+    def _iv_update_pump_error(self, error_msg):
+        """Update pump UI with error"""
+        if hasattr(self, 'iv_pump_status_label'):
+            self.iv_pump_status_label.configure(text='Error', text_color='red')
+    
+    def iv_update_flow(self):
+        """Update flow rate in IV tab"""
+        try:
+            new_flow_rate = float(self.iv_flow_rate_entry.get())
+            
+            if new_flow_rate < 0:
+                messagebox.showerror('Error', 'Flow rate cannot be negative.')
+                return
+            
+            MAX_FLOW_RATE = 5.0
+            if new_flow_rate > MAX_FLOW_RATE:
+                messagebox.showwarning('Flow Rate Limit', 
+                    f'Maximum flow rate is {MAX_FLOW_RATE} ml/min.')
+                new_flow_rate = MAX_FLOW_RATE
+                self.iv_flow_rate_entry.delete(0, 'end')
+                self.iv_flow_rate_entry.insert(0, str(MAX_FLOW_RATE))
+            
+            self.hw_controller.set_pump_flow_rate(new_flow_rate)
+            
+            # Sync with iv_flow_entry
+            if hasattr(self, 'iv_flow_entry'):
+                self.iv_flow_entry.delete(0, 'end')
+                self.iv_flow_entry.insert(0, str(new_flow_rate))
+            
+            if self.update_queue:
+                self.update_queue.put(('UPDATE_IV_STATUS_BAR', 
+                    f'Flow rate updated: {new_flow_rate:.2f} ml/min'))
+        except ValueError:
+            messagebox.showerror('Error', 'Invalid flow rate. Please enter a valid number.')
+        except Exception as e:
+            messagebox.showerror('Error', f'Error updating flow rate: {e}')
+    
+    def iv_sync_flow_entries(self, event=None):
+        """Sync flow rate entries"""
+        try:
+            source = event.widget if event else None
+            if source == self.iv_flow_entry:
+                # Update iv_flow_rate_entry from iv_flow_entry
+                value = self.iv_flow_entry.get()
+                if hasattr(self, 'iv_flow_rate_entry'):
+                    self.iv_flow_rate_entry.delete(0, 'end')
+                    self.iv_flow_rate_entry.insert(0, value)
+            elif source == self.iv_flow_rate_entry:
+                # Update iv_flow_entry from iv_flow_rate_entry
+                value = self.iv_flow_rate_entry.get()
+                if hasattr(self, 'iv_flow_entry'):
+                    self.iv_flow_entry.delete(0, 'end')
+                    self.iv_flow_entry.insert(0, value)
+        except:
+            pass
+    
     # --- I-V Measurement Functions ---
     def iv_direct_set(self):
         """IV direct setting"""
@@ -879,6 +1015,15 @@ class IVTab(BaseTab):
     def iv_stop_measurement(self):
         """Stop IV measurement"""
         self.iv_measurement_stop = True
+        
+        # Stop pump when measurement is stopped
+        try:
+            self.hw_controller.stop_pump()
+            if self.update_queue:
+                self.update_queue.put(('UPDATE_IV_STATUS_BAR', 'Pump stopped'))
+        except Exception as e:
+            print(f"Error stopping pump: {e}")
+        
         if hasattr(self, 'iv_stop_button'):
             self.iv_stop_button.configure(state='disabled')
         if self.update_queue:
@@ -934,6 +1079,50 @@ class IVTab(BaseTab):
         if self.data_handler.file_path and self.update_queue:
             filename = os.path.basename(self.data_handler.file_path)
             self.update_queue.put(('UPDATE_IV_FILE', filename))
+        
+        # Get flow rate from entry
+        try:
+            flow_rate = float(self.iv_flow_entry.get()) if hasattr(self, 'iv_flow_entry') and self.iv_flow_entry.get() else 1.5
+            MAX_FLOW_RATE = 5.0
+            if flow_rate > MAX_FLOW_RATE:
+                flow_rate = MAX_FLOW_RATE
+            if flow_rate < 0:
+                flow_rate = 1.5
+        except:
+            flow_rate = 1.5
+        
+        # Start pump automatically before measurement
+        try:
+            if self.hw_controller.pump and hasattr(self.hw_controller.pump, 'connected'):
+                if not self.hw_controller.pump.connected:
+                    # Try to reconnect
+                    if hasattr(self.hw_controller.pump, 'force_reconnect'):
+                        self.hw_controller.pump.force_reconnect()
+                        time.sleep(2.0)
+                
+                # Set flow rate and start pump
+                self.hw_controller.set_pump_flow_rate(flow_rate)
+                time.sleep(0.3)
+                pump_started = self.hw_controller.start_pump()
+                
+                # Set valves
+                if hasattr(self, 'iv_valve_var'):
+                    valve_main = self.iv_valve_var.get() == 'main'
+                    self.hw_controller.set_valves(valve_main, not valve_main)
+                
+                if pump_started:
+                    if self.update_queue:
+                        self.update_queue.put(('UPDATE_IV_STATUS_BAR', 
+                            f'Pump started: {flow_rate} ml/min'))
+                else:
+                    if self.update_queue:
+                        self.update_queue.put(('UPDATE_IV_STATUS_BAR', 
+                            'Warning: Pump start failed'))
+        except Exception as e:
+            print(f"Error starting pump: {e}")
+            if self.update_queue:
+                self.update_queue.put(('UPDATE_IV_STATUS_BAR', 
+                    f'Warning: Could not start pump: {e}'))
         
         try:
             try:
@@ -1046,6 +1235,11 @@ class IVTab(BaseTab):
                 # Check stop flag again before continuing (in case it was set during measurement)
                 if self.iv_measurement_stop:
                     print("Measurement stopped by user")
+                    # Stop pump when measurement is stopped
+                    try:
+                        self.hw_controller.stop_pump()
+                    except Exception as e:
+                        print(f"Error stopping pump: {e}")
                     if self.update_queue:
                         self.update_queue.put(('UPDATE_IV_STATUS', ('Stopped', 'orange')))
                         self.update_queue.put(('UPDATE_IV_STATUS_BAR', "Measurement stopped by user"))
@@ -1072,6 +1266,14 @@ class IVTab(BaseTab):
             if self.update_queue:
                 self.update_queue.put(('UPDATE_IV_STATUS', ('Completed', 'green')))
                 self.update_queue.put(('UPDATE_IV_STATUS_BAR', "I-V measurement completed"))
+            
+            # Stop pump when measurement ends
+            try:
+                self.hw_controller.stop_pump()
+                if self.update_queue:
+                    self.update_queue.put(('UPDATE_IV_STATUS_BAR', 'Pump stopped'))
+            except Exception as e:
+                print(f"Error stopping pump: {e}")
             
             # BUG FIX #2: Lambda closure - capture button reference correctly
             if hasattr(self, 'iv_stop_button'):

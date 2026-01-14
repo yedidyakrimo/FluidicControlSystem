@@ -44,6 +44,9 @@ class MainTab(BaseTab):
         self.keithley_current_data = []
         self.keithley_time_data = []
         
+        # Graph auto-scale control
+        self.auto_scale_enabled = True  # Default: auto-scale ON
+        
         # Create widgets
         self.create_widgets()
         
@@ -70,7 +73,61 @@ class MainTab(BaseTab):
         left_frame = ctk.CTkScrollableFrame(left_container, width=400)
         left_frame.pack(fill='both', expand=True)
         
-        # Pump Connection Status
+        # ========== 1. CONTROL BUTTONS (TOP) ==========
+        control_frame = ctk.CTkFrame(left_frame)
+        control_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(control_frame, text="Control", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        # Row 1: Start | Stop | Finish (horizontal)
+        row1_frame = ctk.CTkFrame(control_frame)
+        row1_frame.pack(pady=2)
+        self.start_btn = self.create_blue_button(row1_frame, text='Start Recording',
+                                                 command=self.start_recording, width=120, height=40)
+        self.start_btn.pack(side='left', padx=2)
+        
+        self.stop_btn = self.create_blue_button(row1_frame, text='Stop Recording',
+                                                command=self.stop_recording, width=120, height=40,
+                                                fg_color='#0D47A1', hover_color='#0C3A7A')
+        self.stop_btn.pack(side='left', padx=2)
+        
+        self.finish_btn = self.create_blue_button(row1_frame, text='Finish Recording',
+                                                  command=self.finish_recording, width=120, height=40,
+                                                  fg_color='#0C6CC0', hover_color='#0A518A')
+        self.finish_btn.pack(side='left', padx=2)
+        
+        # Row 2: Clear Graph (Update Flow moved to flow rate entry row)
+        row2_frame = ctk.CTkFrame(control_frame)
+        row2_frame.pack(pady=2)
+        
+        self.clear_graph_btn = self.create_blue_button(row2_frame, text='Clear Graph',
+                                                       command=self.clear_graph, width=120)
+        self.clear_graph_btn.pack(side='left', padx=2)
+        
+        # Row 3: Export (Excel, PNG, PDF) (horizontal)
+        export_menu_frame = ctk.CTkFrame(control_frame)
+        export_menu_frame.pack(pady=2)
+        ctk.CTkLabel(export_menu_frame, text='Export:', width=80).pack(side='left', padx=5)
+        self.export_btn = self.create_blue_button(export_menu_frame, text='Excel',
+                                                 command=self.export_excel, width=100)
+        self.export_btn.pack(side='left', padx=2)
+        
+        self.create_blue_button(export_menu_frame, text='PNG', 
+                               command=self.export_graph_png, width=100).pack(side='left', padx=2)
+        
+        self.create_blue_button(export_menu_frame, text='PDF', 
+                               command=self.export_graph_pdf, width=100).pack(side='left', padx=2)
+        
+        # Row 4: Segment Label (for marking phases in experiment)
+        segment_frame = ctk.CTkFrame(control_frame)
+        segment_frame.pack(fill='x', pady=2)
+        ctk.CTkLabel(segment_frame, text='Segment Label:', width=100).pack(side='left', padx=5)
+        self.segment_entry = ctk.CTkEntry(segment_frame, width=150, placeholder_text='e.g., "Heating Phase"')
+        self.segment_entry.pack(side='left', padx=5)
+        self.add_segment_btn = self.create_blue_button(segment_frame, text='Add Segment',
+                                                       command=self.add_segment_label, width=100)
+        self.add_segment_btn.pack(side='left', padx=2)
+        
+        # ========== 2. VAPOURTEC SF-10 PUMP STATUS & CONTROL ==========
         pump_status_frame = ctk.CTkFrame(left_frame)
         pump_status_frame.pack(fill='x', pady=5)
         ctk.CTkLabel(pump_status_frame, text="Vapourtec SF-10 Pump Status", font=('Helvetica', 14, 'bold')).pack(pady=5)
@@ -82,192 +139,33 @@ class MainTab(BaseTab):
         self.pump_status_label = ctk.CTkLabel(pump_info_frame, text='Checking...', width=250, anchor='w')
         self.pump_status_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
         
-        ctk.CTkLabel(pump_info_frame, text='Port:', width=100).grid(row=1, column=0, padx=5, pady=2, sticky='w')
-        self.pump_port_label = ctk.CTkLabel(pump_info_frame, text='N/A', width=250, anchor='w')
-        self.pump_port_label.grid(row=1, column=1, padx=5, pady=2, sticky='w')
+        # Port - commented out (not displayed)
+        # ctk.CTkLabel(pump_info_frame, text='Port:', width=100).grid(row=1, column=0, padx=5, pady=2, sticky='w')
+        # self.pump_port_label = ctk.CTkLabel(pump_info_frame, text='N/A', width=250, anchor='w')
+        # self.pump_port_label.grid(row=1, column=1, padx=5, pady=2, sticky='w')
         
-        ctk.CTkLabel(pump_info_frame, text='Flow Rate:', width=100).grid(row=2, column=0, padx=5, pady=2, sticky='w')
-        self.pump_flow_label = ctk.CTkLabel(pump_info_frame, text='N/A', width=250, anchor='w')
-        self.pump_flow_label.grid(row=2, column=1, padx=5, pady=2, sticky='w')
+        # Flow Rate - commented out (not displayed)
+        # ctk.CTkLabel(pump_info_frame, text='Flow Rate:', width=100).grid(row=2, column=0, padx=5, pady=2, sticky='w')
+        # self.pump_flow_label = ctk.CTkLabel(pump_info_frame, text='N/A', width=250, anchor='w')
+        # self.pump_flow_label.grid(row=2, column=1, padx=5, pady=2, sticky='w')
         
-        ctk.CTkLabel(pump_info_frame, text='Max Flow:', width=100).grid(row=3, column=0, padx=5, pady=2, sticky='w')
-        self.pump_max_flow_label = ctk.CTkLabel(pump_info_frame, text='5.0 ml/min', width=250, anchor='w', text_color='gray')
-        self.pump_max_flow_label.grid(row=3, column=1, padx=5, pady=2, sticky='w')
+        # Quick Flow Rate Setting (compact)
+        flow_quick_frame = ctk.CTkFrame(pump_status_frame)
+        flow_quick_frame.pack(fill='x', padx=5, pady=5)
+        ctk.CTkLabel(flow_quick_frame, text='Quick Flow Rate (ml/min):', width=150).pack(side='left', padx=5)
+        self.flow_rate_entry = ctk.CTkEntry(flow_quick_frame, width=100)
+        self.flow_rate_entry.insert(0, '1.5')
+        self.flow_rate_entry.pack(side='left', padx=5)
+        self.update_flow_btn = self.create_blue_button(flow_quick_frame, text='Update Flow',
+                                                      command=self.update_flow, width=100)
+        self.update_flow_btn.pack(side='left', padx=2)
         
         # Control buttons
         pump_btn_frame = ctk.CTkFrame(pump_status_frame)
         pump_btn_frame.pack(pady=5)
         self.create_blue_button(pump_btn_frame, text='🔄 Refresh Status', command=self.refresh_pump_status, width=120, height=30).pack(side='left', padx=2)
         
-        # Experiment Parameters
-        exp_frame = ctk.CTkFrame(left_frame)
-        exp_frame.pack(fill='x', pady=5)
-        ctk.CTkLabel(exp_frame, text="Experiment Parameters", font=('Helvetica', 14, 'bold')).pack(pady=5)
-        
-        flow_frame = ctk.CTkFrame(exp_frame)
-        flow_frame.pack(fill='x', padx=5, pady=2)
-        ctk.CTkLabel(flow_frame, text='Flow Rate (ml/min):', width=150).pack(side='left', padx=5)
-        self.flow_rate_entry = ctk.CTkEntry(flow_frame, width=100)
-        self.flow_rate_entry.insert(0, '1.5')
-        self.flow_rate_entry.pack(side='left', padx=5)
-        ctk.CTkLabel(flow_frame, text='(Max: 5.0)', width=80, font=('Helvetica', 9), text_color='gray').pack(side='left', padx=2)
-        
-        duration_frame = ctk.CTkFrame(exp_frame)
-        duration_frame.pack(fill='x', padx=5, pady=2)
-        ctk.CTkLabel(duration_frame, text='Duration (sec):', width=150).pack(side='left', padx=5)
-        self.duration_entry = ctk.CTkEntry(duration_frame, width=100)
-        self.duration_entry.insert(0, '600')
-        self.duration_entry.pack(side='left', padx=5)
-        
-        valve_frame = ctk.CTkFrame(exp_frame)
-        valve_frame.pack(fill='x', padx=5, pady=2)
-        ctk.CTkLabel(valve_frame, text='Valve Settings:', width=150).pack(side='left', padx=5)
-        self.valve_var = ctk.StringVar(value="main")
-        ctk.CTkRadioButton(valve_frame, text="Main", variable=self.valve_var, value="main").pack(side='left', padx=5)
-        ctk.CTkRadioButton(valve_frame, text="Rinsing", variable=self.valve_var, value="rinsing").pack(side='left', padx=5)
-        
-        # Experiment Metadata
-        metadata_frame = ctk.CTkFrame(left_frame)
-        metadata_frame.pack(fill='x', pady=5)
-        ctk.CTkLabel(metadata_frame, text="Experiment Metadata", font=('Helvetica', 14, 'bold')).pack(pady=5)
-        
-        name_frame = ctk.CTkFrame(metadata_frame)
-        name_frame.pack(fill='x', padx=5, pady=2)
-        ctk.CTkLabel(name_frame, text='Experiment Name:', width=120).pack(side='left', padx=5)
-        self.exp_name_entry = ctk.CTkEntry(name_frame, width=200)
-        self.exp_name_entry.insert(0, 'experiment_data')
-        self.exp_name_entry.pack(side='left', padx=5)
-        
-        desc_frame = ctk.CTkFrame(metadata_frame)
-        desc_frame.pack(fill='x', padx=5, pady=2)
-        ctk.CTkLabel(desc_frame, text='Description:', width=120).pack(side='left', padx=5)
-        self.exp_desc_entry = ctk.CTkEntry(desc_frame, width=200)
-        self.exp_desc_entry.pack(side='left', padx=5)
-        
-        tags_frame = ctk.CTkFrame(metadata_frame)
-        tags_frame.pack(fill='x', padx=5, pady=2)
-        ctk.CTkLabel(tags_frame, text='Tags (comma-separated):', width=120).pack(side='left', padx=5)
-        self.exp_tags_entry = ctk.CTkEntry(tags_frame, width=200)
-        self.exp_tags_entry.insert(0, 'test')
-        self.exp_tags_entry.pack(side='left', padx=5)
-        
-        operator_frame = ctk.CTkFrame(metadata_frame)
-        operator_frame.pack(fill='x', padx=5, pady=2)
-        ctk.CTkLabel(operator_frame, text='Operator:', width=120).pack(side='left', padx=5)
-        self.exp_operator_entry = ctk.CTkEntry(operator_frame, width=200)
-        self.exp_operator_entry.pack(side='left', padx=5)
-        
-        ctk.CTkLabel(metadata_frame, text='(Metadata will be saved with experiment data)', 
-                    font=('Helvetica', 9), text_color='gray').pack(pady=2)
-        
-        # Control buttons
-        control_frame = ctk.CTkFrame(left_frame)
-        control_frame.pack(fill='x', pady=5)
-        ctk.CTkLabel(control_frame, text="Control", font=('Helvetica', 14, 'bold')).pack(pady=5)
-        
-        self.start_btn = self.create_blue_button(control_frame, text='Start Recording',
-                                                 command=self.start_recording, width=150, height=40)
-        self.start_btn.pack(pady=2)
-        
-        self.stop_btn = self.create_blue_button(control_frame, text='Stop Recording',
-                                                command=self.stop_recording, width=150, height=40,
-                                                fg_color='#0D47A1', hover_color='#0C3A7A')
-        self.stop_btn.pack(pady=2)
-        
-        self.finish_btn = self.create_blue_button(control_frame, text='Finish Recording',
-                                                  command=self.finish_recording, width=150, height=40,
-                                                  fg_color='#0C6CC0', hover_color='#0A518A')
-        self.finish_btn.pack(pady=2)
-        
-        self.update_flow_btn = self.create_blue_button(control_frame, text='Update Flow',
-                                                      command=self.update_flow, width=150)
-        self.update_flow_btn.pack(pady=2)
-        
-        self.clear_graph_btn = self.create_blue_button(control_frame, text='Clear Graph',
-                                                       command=self.clear_graph, width=150)
-        self.clear_graph_btn.pack(pady=2)
-        
-        export_menu_frame = ctk.CTkFrame(control_frame)
-        export_menu_frame.pack(pady=2)
-        
-        ctk.CTkLabel(export_menu_frame, text='Export:', width=80).pack(side='left', padx=5)
-        self.export_btn = self.create_blue_button(export_menu_frame, text='Excel',
-                                                 command=self.export_excel, width=100)
-        self.export_btn.pack(side='left', padx=2)
-        
-        self.create_blue_button(export_menu_frame, text='PNG', command=self.export_graph_png, width=100).pack(side='left', padx=2)
-        
-        self.create_blue_button(export_menu_frame, text='PDF', command=self.export_graph_pdf, width=100).pack(side='left', padx=2)
-        
-        # Current Readings
-        readings_frame = ctk.CTkFrame(left_frame)
-        readings_frame.pack(fill='x', pady=5)
-        ctk.CTkLabel(readings_frame, text="Current Readings", font=('Helvetica', 14, 'bold')).pack(pady=5)
-        
-        readings_grid = ctk.CTkFrame(readings_frame)
-        readings_grid.pack(fill='x', padx=5, pady=5)
-        
-        ctk.CTkLabel(readings_grid, text='Pressure:', width=120).grid(row=0, column=0, padx=5, pady=2)
-        self.pressure_label = ctk.CTkLabel(readings_grid, text='N/A', width=180)
-        self.pressure_label.grid(row=0, column=1, padx=5, pady=2)
-        
-        ctk.CTkLabel(readings_grid, text='Temperature:', width=120).grid(row=1, column=0, padx=5, pady=2)
-        self.temp_label = ctk.CTkLabel(readings_grid, text='N/A', width=180)
-        self.temp_label.grid(row=1, column=1, padx=5, pady=2)
-        
-        ctk.CTkLabel(readings_grid, text='Flow:', width=120).grid(row=2, column=0, padx=5, pady=2)
-        self.flow_label = ctk.CTkLabel(readings_grid, text='N/A', width=180)
-        self.flow_label.grid(row=2, column=1, padx=5, pady=2)
-        
-        ctk.CTkLabel(readings_grid, text='Level:', width=120).grid(row=3, column=0, padx=5, pady=2)
-        self.level_label = ctk.CTkLabel(readings_grid, text='N/A', width=180)
-        self.level_label.grid(row=3, column=1, padx=5, pady=2)
-        
-        # Real-time Statistics Panel
-        stats_frame = ctk.CTkFrame(left_frame)
-        stats_frame.pack(fill='x', pady=5)
-        ctk.CTkLabel(stats_frame, text="Real-Time Statistics", font=('Helvetica', 14, 'bold')).pack(pady=5)
-        
-        stats_grid = ctk.CTkFrame(stats_frame)
-        stats_grid.pack(fill='x', padx=5, pady=5)
-        
-        ctk.CTkLabel(stats_grid, text='Flow:', width=120, font=('Helvetica', 10, 'bold')).grid(row=0, column=0, padx=5, pady=2)
-        self.flow_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=260, font=('Helvetica', 9))
-        self.flow_stats_label.grid(row=0, column=1, padx=5, pady=2)
-        
-        ctk.CTkLabel(stats_grid, text='Pressure:', width=120, font=('Helvetica', 10, 'bold')).grid(row=1, column=0, padx=5, pady=2)
-        self.pressure_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=260, font=('Helvetica', 9))
-        self.pressure_stats_label.grid(row=1, column=1, padx=5, pady=2)
-        
-        ctk.CTkLabel(stats_grid, text='Temperature:', width=120, font=('Helvetica', 10, 'bold')).grid(row=2, column=0, padx=5, pady=2)
-        self.temp_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=260, font=('Helvetica', 9))
-        self.temp_stats_label.grid(row=2, column=1, padx=5, pady=2)
-        
-        ctk.CTkLabel(stats_grid, text='Level:', width=120, font=('Helvetica', 10, 'bold')).grid(row=3, column=0, padx=5, pady=2)
-        self.level_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=260, font=('Helvetica', 9))
-        self.level_stats_label.grid(row=3, column=1, padx=5, pady=2)
-        
-        # Recording Status
-        status_frame = ctk.CTkFrame(left_frame)
-        status_frame.pack(fill='x', pady=5)
-        ctk.CTkLabel(status_frame, text="Recording Status", font=('Helvetica', 14, 'bold')).pack(pady=5)
-        
-        status_grid = ctk.CTkFrame(status_frame)
-        status_grid.pack(fill='x', padx=5, pady=5)
-        
-        ctk.CTkLabel(status_grid, text='Status:', width=120).grid(row=0, column=0, padx=5, pady=2)
-        self.recording_status_label = ctk.CTkLabel(status_grid, text='Ready', text_color='green', width=220)
-        self.recording_status_label.grid(row=0, column=1, padx=5, pady=2)
-        
-        ctk.CTkLabel(status_grid, text='File:', width=120).grid(row=1, column=0, padx=5, pady=2)
-        self.current_file_label = ctk.CTkLabel(status_grid, text='No file selected', width=220)
-        self.current_file_label.grid(row=1, column=1, padx=5, pady=2)
-        
-        # Status bar
-        self.status_bar = ctk.CTkLabel(left_frame, text='', font=('Helvetica', 10))
-        self.status_bar.pack(pady=5)
-        
-        # ========== KEITHLEY 2450 CONTROL PANEL ==========
+        # ========== 3. KEITHLEY 2450 SMU CONTROL ==========
         keithley_frame = ctk.CTkFrame(left_frame)
         keithley_frame.pack(fill='x', pady=5)
         ctk.CTkLabel(keithley_frame, text="Keithley 2450 SMU Control", font=('Helvetica', 14, 'bold')).pack(pady=5)
@@ -288,10 +186,10 @@ class MainTab(BaseTab):
         self.keithley_mode_var = ctk.StringVar(value="voltage")
         mode_radio_frame = ctk.CTkFrame(mode_frame)
         mode_radio_frame.pack(pady=2)
-        ctk.CTkRadioButton(mode_radio_frame, text="Source Voltage / Measure Current", 
+        ctk.CTkRadioButton(mode_radio_frame, text="Source Current / Measure Voltage", 
                           variable=self.keithley_mode_var, value="voltage",
                           command=self.on_keithley_mode_change).pack(side='left', padx=5)
-        ctk.CTkRadioButton(mode_radio_frame, text="Source Current / Measure Voltage", 
+        ctk.CTkRadioButton(mode_radio_frame, text="Source Voltage / Measure Current", 
                           variable=self.keithley_mode_var, value="current",
                           command=self.on_keithley_mode_change).pack(side='left', padx=5)
         
@@ -350,6 +248,127 @@ class MainTab(BaseTab):
         self.create_blue_button(smu_btn_frame, text='🔄 Refresh SMU Status', 
                                command=self.refresh_keithley_status, width=150, height=30).pack(side='left', padx=2)
         
+        # ========== 4. CURRENT READINGS (LIVE) ==========
+        readings_frame = ctk.CTkFrame(left_frame)
+        readings_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(readings_frame, text="Current Readings", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        readings_grid = ctk.CTkFrame(readings_frame)
+        readings_grid.pack(fill='x', padx=5, pady=5)
+        
+        ctk.CTkLabel(readings_grid, text='Pressure:', width=120).grid(row=0, column=0, padx=5, pady=2)
+        self.pressure_label = ctk.CTkLabel(readings_grid, text='N/A', width=180)
+        self.pressure_label.grid(row=0, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(readings_grid, text='Temperature:', width=120).grid(row=1, column=0, padx=5, pady=2)
+        self.temp_label = ctk.CTkLabel(readings_grid, text='N/A', width=180)
+        self.temp_label.grid(row=1, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(readings_grid, text='Flow:', width=120).grid(row=2, column=0, padx=5, pady=2)
+        self.flow_label = ctk.CTkLabel(readings_grid, text='N/A', width=180)
+        self.flow_label.grid(row=2, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(readings_grid, text='Level:', width=120).grid(row=3, column=0, padx=5, pady=2)
+        self.level_label = ctk.CTkLabel(readings_grid, text='N/A', width=180)
+        self.level_label.grid(row=3, column=1, padx=5, pady=2)
+        
+        # Experiment Parameters (kept for functionality)
+        exp_frame = ctk.CTkFrame(left_frame)
+        exp_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(exp_frame, text="Experiment Parameters", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        duration_frame = ctk.CTkFrame(exp_frame)
+        duration_frame.pack(fill='x', padx=5, pady=2)
+        ctk.CTkLabel(duration_frame, text='Duration (sec):', width=150).pack(side='left', padx=5)
+        self.duration_entry = ctk.CTkEntry(duration_frame, width=100)
+        self.duration_entry.insert(0, '6000')
+        self.duration_entry.pack(side='left', padx=5)
+        
+        valve_frame = ctk.CTkFrame(exp_frame)
+        valve_frame.pack(fill='x', padx=5, pady=2)
+        ctk.CTkLabel(valve_frame, text='Valve Settings:', width=150).pack(side='left', padx=5)
+        self.valve_var = ctk.StringVar(value="main")
+        ctk.CTkRadioButton(valve_frame, text="Main", variable=self.valve_var, value="main").pack(side='left', padx=5)
+        ctk.CTkRadioButton(valve_frame, text="Rinsing", variable=self.valve_var, value="rinsing").pack(side='left', padx=5)
+        
+        # Experiment Metadata (kept for functionality)
+        metadata_frame = ctk.CTkFrame(left_frame)
+        metadata_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(metadata_frame, text="Experiment Metadata", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        name_frame = ctk.CTkFrame(metadata_frame)
+        name_frame.pack(fill='x', padx=5, pady=2)
+        ctk.CTkLabel(name_frame, text='Experiment Name:', width=120).pack(side='left', padx=5)
+        self.exp_name_entry = ctk.CTkEntry(name_frame, width=200)
+        self.exp_name_entry.insert(0, 'experiment_data')
+        self.exp_name_entry.pack(side='left', padx=5)
+        
+        desc_frame = ctk.CTkFrame(metadata_frame)
+        desc_frame.pack(fill='x', padx=5, pady=2)
+        ctk.CTkLabel(desc_frame, text='Description:', width=120).pack(side='left', padx=5)
+        self.exp_desc_entry = ctk.CTkEntry(desc_frame, width=200)
+        self.exp_desc_entry.pack(side='left', padx=5)
+        
+        tags_frame = ctk.CTkFrame(metadata_frame)
+        tags_frame.pack(fill='x', padx=5, pady=2)
+        ctk.CTkLabel(tags_frame, text='Tags (comma-separated):', width=120).pack(side='left', padx=5)
+        self.exp_tags_entry = ctk.CTkEntry(tags_frame, width=200)
+        self.exp_tags_entry.insert(0, 'test')
+        self.exp_tags_entry.pack(side='left', padx=5)
+        
+        operator_frame = ctk.CTkFrame(metadata_frame)
+        operator_frame.pack(fill='x', padx=5, pady=2)
+        ctk.CTkLabel(operator_frame, text='Operator:', width=120).pack(side='left', padx=5)
+        self.exp_operator_entry = ctk.CTkEntry(operator_frame, width=200)
+        self.exp_operator_entry.pack(side='left', padx=5)
+        
+        ctk.CTkLabel(metadata_frame, text='(Metadata will be saved with experiment data)', 
+                    font=('Helvetica', 9), text_color='gray').pack(pady=2)
+        
+        # Real-time Statistics Panel
+        stats_frame = ctk.CTkFrame(left_frame)
+        stats_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(stats_frame, text="Real-Time Statistics", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        stats_grid = ctk.CTkFrame(stats_frame)
+        stats_grid.pack(fill='x', padx=5, pady=5)
+        
+        ctk.CTkLabel(stats_grid, text='Flow:', width=120, font=('Helvetica', 10, 'bold')).grid(row=0, column=0, padx=5, pady=2)
+        self.flow_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=260, font=('Helvetica', 9))
+        self.flow_stats_label.grid(row=0, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(stats_grid, text='Pressure:', width=120, font=('Helvetica', 10, 'bold')).grid(row=1, column=0, padx=5, pady=2)
+        self.pressure_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=260, font=('Helvetica', 9))
+        self.pressure_stats_label.grid(row=1, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(stats_grid, text='Temperature:', width=120, font=('Helvetica', 10, 'bold')).grid(row=2, column=0, padx=5, pady=2)
+        self.temp_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=260, font=('Helvetica', 9))
+        self.temp_stats_label.grid(row=2, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(stats_grid, text='Level:', width=120, font=('Helvetica', 10, 'bold')).grid(row=3, column=0, padx=5, pady=2)
+        self.level_stats_label = ctk.CTkLabel(stats_grid, text='Mean: N/A | Std: N/A', width=260, font=('Helvetica', 9))
+        self.level_stats_label.grid(row=3, column=1, padx=5, pady=2)
+        
+        # Recording Status
+        status_frame = ctk.CTkFrame(left_frame)
+        status_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(status_frame, text="Recording Status", font=('Helvetica', 14, 'bold')).pack(pady=5)
+        
+        status_grid = ctk.CTkFrame(status_frame)
+        status_grid.pack(fill='x', padx=5, pady=5)
+        
+        ctk.CTkLabel(status_grid, text='Status:', width=120).grid(row=0, column=0, padx=5, pady=2)
+        self.recording_status_label = ctk.CTkLabel(status_grid, text='Ready', text_color='green', width=220)
+        self.recording_status_label.grid(row=0, column=1, padx=5, pady=2)
+        
+        ctk.CTkLabel(status_grid, text='File:', width=120).grid(row=1, column=0, padx=5, pady=2)
+        self.current_file_label = ctk.CTkLabel(status_grid, text='No file selected', width=220)
+        self.current_file_label.grid(row=1, column=1, padx=5, pady=2)
+        
+        # Status bar
+        self.status_bar = ctk.CTkLabel(left_frame, text='', font=('Helvetica', 10))
+        self.status_bar.pack(pady=5)
+        
         # Right column container
         right_container = Frame(paned, bg='#1a1a1a')
         paned.add(right_container, minsize=400)
@@ -367,8 +386,21 @@ class MainTab(BaseTab):
         mode_frame.pack(fill='x', padx=5, pady=5)
         ctk.CTkLabel(mode_frame, text='View Mode:', width=80).pack(side='left', padx=5)
         self.graph_mode_var = ctk.StringVar(value="single")
-        ctk.CTkRadioButton(mode_frame, text="Multi-Panel (4 graphs)", variable=self.graph_mode_var, value="multi", command=self.on_graph_mode_change).pack(side='left', padx=5)
+        ctk.CTkRadioButton(mode_frame, text="Multi-Panel (3 graphs)", variable=self.graph_mode_var, value="multi", command=self.on_graph_mode_change).pack(side='left', padx=5)
         ctk.CTkRadioButton(mode_frame, text="Single Graph (X-Y)", variable=self.graph_mode_var, value="single", command=self.on_graph_mode_change).pack(side='left', padx=5)
+        
+        # Auto-scale toggle button
+        auto_scale_frame = ctk.CTkFrame(graph_control_frame)
+        auto_scale_frame.pack(fill='x', padx=5, pady=2)
+        ctk.CTkLabel(auto_scale_frame, text='Zoom Control:', width=80).pack(side='left', padx=5)
+        self.auto_scale_btn = self.create_blue_button(
+            auto_scale_frame, 
+            text='🔓 Auto-Scale ON', 
+            command=self.toggle_auto_scale, 
+            width=150,
+            height=30
+        )
+        self.auto_scale_btn.pack(side='left', padx=2)
         
         # Single graph controls (shown initially)
         self.axis_frame = ctk.CTkFrame(graph_control_frame)
@@ -400,16 +432,14 @@ class MainTab(BaseTab):
     
     def setup_graphs(self):
         """Initialize matplotlib graphs"""
-        # Multi-panel graphs (2x2 grid)
-        self.multi_fig, ((self.flow_ax, self.pressure_ax), 
-                         (self.temp_ax, self.level_ax)) = plt.subplots(2, 2, figsize=(12, 10))
+        # Multi-panel graphs (1x3 grid: Voltage, Current, Flow)
+        self.multi_fig, (self.voltage_ax, self.current_ax, self.flow_ax) = plt.subplots(1, 3, figsize=(15, 5))
         
         # Configure each subplot
         graphs_config = [
-            (self.flow_ax, 'Flow Rate', 'Flow Rate (ml/min)', '#2E86AB'),
-            (self.pressure_ax, 'Pressure', 'Pressure (bar)', '#A23B72'),
-            (self.temp_ax, 'Temperature', 'Temperature (°C)', '#F18F01'),
-            (self.level_ax, 'Liquid Level', 'Level (%)', '#06A77D')
+            (self.voltage_ax, 'Voltage', 'Voltage (V)', '#2E86AB'),
+            (self.current_ax, 'Current', 'Current (A)', '#A23B72'),
+            (self.flow_ax, 'Flow Rate', 'Flow Rate (ml/min)', '#F18F01')
         ]
         
         for ax, title, ylabel, color in graphs_config:
@@ -474,80 +504,86 @@ class MainTab(BaseTab):
             self.on_axis_change()
     
     def update_multi_panel_graphs(self):
-        """Update all 4 graphs in multi-panel view"""
+        """Update all 3 graphs in multi-panel view: Voltage, Current, Flow"""
         # BUG FIX #1 & #4: Thread-safe access with lock and make copies
         with self.data_lock:
             flow_x_copy = list(self.flow_x_data) if self.flow_x_data else []
             flow_y_copy = list(self.flow_y_data) if self.flow_y_data else []
-            pressure_x_copy = list(self.pressure_x_data) if self.pressure_x_data else []
-            pressure_y_copy = list(self.pressure_y_data) if self.pressure_y_data else []
-            temp_x_copy = list(self.temp_x_data) if self.temp_x_data else []
-            temp_y_copy = list(self.temp_y_data) if self.temp_y_data else []
-            level_x_copy = list(self.level_x_data) if self.level_x_data else []
-            level_y_copy = list(self.level_y_data) if self.level_y_data else []
+            keithley_time_copy = list(self.keithley_time_data) if self.keithley_time_data else []
+            keithley_voltage_copy = list(self.keithley_voltage_data) if self.keithley_voltage_data else []
+            keithley_current_copy = list(self.keithley_current_data) if self.keithley_current_data else []
+        
+        # Voltage graph
+        if not self.auto_scale_enabled:
+            voltage_xlim = self.voltage_ax.get_xlim()
+            voltage_ylim = self.voltage_ax.get_ylim()
+        
+        self.voltage_ax.clear()
+        if len(keithley_time_copy) > 0 and len(keithley_voltage_copy) > 0:
+            min_len = min(len(keithley_time_copy), len(keithley_voltage_copy))
+            self.voltage_ax.plot(keithley_time_copy[:min_len], keithley_voltage_copy[:min_len], 
+                                color='#2E86AB', linewidth=2, alpha=0.85)
+            if min_len > 0:
+                self.voltage_ax.relim()
+                if self.auto_scale_enabled:
+                    self.voltage_ax.autoscale()
+                else:
+                    self.voltage_ax.set_xlim(voltage_xlim)
+                    self.voltage_ax.set_ylim(voltage_ylim)
+        self.voltage_ax.set_xlabel("Time (s)", color='black', fontsize=10)
+        self.voltage_ax.set_ylabel("Voltage (V)", color='black', fontsize=10)
+        self.voltage_ax.set_title("Voltage", color='black', fontsize=12, fontweight='bold', pad=10)
+        self.voltage_ax.grid(True, alpha=0.4, color='gray', linestyle='-', linewidth=0.5)
+        self.voltage_ax.set_axisbelow(True)
+        
+        # Current graph
+        if not self.auto_scale_enabled:
+            current_xlim = self.current_ax.get_xlim()
+            current_ylim = self.current_ax.get_ylim()
+        
+        self.current_ax.clear()
+        if len(keithley_time_copy) > 0 and len(keithley_current_copy) > 0:
+            min_len = min(len(keithley_time_copy), len(keithley_current_copy))
+            self.current_ax.plot(keithley_time_copy[:min_len], keithley_current_copy[:min_len], 
+                                color='#A23B72', linewidth=2, alpha=0.85)
+            if min_len > 0:
+                self.current_ax.relim()
+                if self.auto_scale_enabled:
+                    self.current_ax.autoscale()
+                else:
+                    self.current_ax.set_xlim(current_xlim)
+                    self.current_ax.set_ylim(current_ylim)
+        self.current_ax.set_xlabel("Time (s)", color='black', fontsize=10)
+        self.current_ax.set_ylabel("Current (A)", color='black', fontsize=10)
+        self.current_ax.set_title("Current", color='black', fontsize=12, fontweight='bold', pad=10)
+        self.current_ax.grid(True, alpha=0.4, color='gray', linestyle='-', linewidth=0.5)
+        self.current_ax.set_axisbelow(True)
         
         # Flow graph
+        if not self.auto_scale_enabled:
+            flow_xlim = self.flow_ax.get_xlim()
+            flow_ylim = self.flow_ax.get_ylim()
+        
         self.flow_ax.clear()
         if len(flow_x_copy) > 0 and len(flow_y_copy) > 0:
             min_len = min(len(flow_x_copy), len(flow_y_copy))
-            self.flow_ax.plot(flow_x_copy[:min_len], flow_y_copy[:min_len], color='#2E86AB', linewidth=2, alpha=0.85)
-            # Auto-scale axes
+            self.flow_ax.plot(flow_x_copy[:min_len], flow_y_copy[:min_len], 
+                             color='#F18F01', linewidth=2, alpha=0.85)
             if min_len > 0:
                 self.flow_ax.relim()
-                self.flow_ax.autoscale()
+                if self.auto_scale_enabled:
+                    self.flow_ax.autoscale()
+                else:
+                    self.flow_ax.set_xlim(flow_xlim)
+                    self.flow_ax.set_ylim(flow_ylim)
         self.flow_ax.set_xlabel("Time (s)", color='black', fontsize=10)
         self.flow_ax.set_ylabel("Flow Rate (ml/min)", color='black', fontsize=10)
         self.flow_ax.set_title("Flow Rate", color='black', fontsize=12, fontweight='bold', pad=10)
         self.flow_ax.grid(True, alpha=0.4, color='gray', linestyle='-', linewidth=0.5)
         self.flow_ax.set_axisbelow(True)
         
-        # Pressure graph
-        self.pressure_ax.clear()
-        if len(pressure_x_copy) > 0 and len(pressure_y_copy) > 0:
-            min_len = min(len(pressure_x_copy), len(pressure_y_copy))
-            self.pressure_ax.plot(pressure_x_copy[:min_len], pressure_y_copy[:min_len], color='#A23B72', linewidth=2, alpha=0.85)
-            # Auto-scale axes
-            if min_len > 0:
-                self.pressure_ax.relim()
-                self.pressure_ax.autoscale()
-        self.pressure_ax.set_xlabel("Time (s)", color='black', fontsize=10)
-        self.pressure_ax.set_ylabel("Pressure (bar)", color='black', fontsize=10)
-        self.pressure_ax.set_title("Pressure", color='black', fontsize=12, fontweight='bold', pad=10)
-        self.pressure_ax.grid(True, alpha=0.4, color='gray', linestyle='-', linewidth=0.5)
-        self.pressure_ax.set_axisbelow(True)
-        
-        # Temperature graph
-        self.temp_ax.clear()
-        if len(temp_x_copy) > 0 and len(temp_y_copy) > 0:
-            min_len = min(len(temp_x_copy), len(temp_y_copy))
-            self.temp_ax.plot(temp_x_copy[:min_len], temp_y_copy[:min_len], color='#F18F01', linewidth=2, alpha=0.85)
-            # Auto-scale axes
-            if min_len > 0:
-                self.temp_ax.relim()
-                self.temp_ax.autoscale()
-        self.temp_ax.set_xlabel("Time (s)", color='black', fontsize=10)
-        self.temp_ax.set_ylabel("Temperature (°C)", color='black', fontsize=10)
-        self.temp_ax.set_title("Temperature", color='black', fontsize=12, fontweight='bold', pad=10)
-        self.temp_ax.grid(True, alpha=0.4, color='gray', linestyle='-', linewidth=0.5)
-        self.temp_ax.set_axisbelow(True)
-        
-        # Level graph
-        self.level_ax.clear()
-        if len(level_x_copy) > 0 and len(level_y_copy) > 0:
-            min_len = min(len(level_x_copy), len(level_y_copy))
-            self.level_ax.plot(level_x_copy[:min_len], level_y_copy[:min_len], color='#06A77D', linewidth=2, alpha=0.85)
-            # Auto-scale axes
-            if min_len > 0:
-                self.level_ax.relim()
-                self.level_ax.autoscale()
-        self.level_ax.set_xlabel("Time (s)", color='black', fontsize=10)
-        self.level_ax.set_ylabel("Level (%)", color='black', fontsize=10)
-        self.level_ax.set_title("Liquid Level", color='black', fontsize=12, fontweight='bold', pad=10)
-        self.level_ax.grid(True, alpha=0.4, color='gray', linestyle='-', linewidth=0.5)
-        self.level_ax.set_axisbelow(True)
-        
         # Apply styling to all axes
-        for ax in [self.flow_ax, self.pressure_ax, self.temp_ax, self.level_ax]:
+        for ax in [self.voltage_ax, self.current_ax, self.flow_ax]:
             ax.set_facecolor('white')
             ax.tick_params(colors='black', labelsize=9)
             for spine in ax.spines.values():
@@ -565,6 +601,13 @@ class MainTab(BaseTab):
     
     def plot_xy_graph(self, x_axis_type, y_axis_type, x_data, y_data):
         """Plot X vs Y with any combination of parameters"""
+        # Save current limits if auto-scale is disabled
+        saved_xlim = None
+        saved_ylim = None
+        if not self.auto_scale_enabled:
+            saved_xlim = self.main_ax.get_xlim()
+            saved_ylim = self.main_ax.get_ylim()
+        
         self.main_ax.clear()
         
         # BUG FIX #1 & #4: Thread-safe access with lock and make copies
@@ -706,15 +749,46 @@ class MainTab(BaseTab):
             spine.set_color('black')
             spine.set_linewidth(1)
         
-        # Set axis limits
+        # Set axis limits (only if auto-scale is enabled)
         if len(x_plot) > 0 and len(y_plot) > 0:
-            x_margin = (max(x_plot) - min(x_plot)) * 0.05 if max(x_plot) > min(x_plot) else 1
-            y_margin = (max(y_plot) - min(y_plot)) * 0.1 if max(y_plot) > min(y_plot) else 1
-            self.main_ax.set_xlim(min(x_plot) - x_margin, max(x_plot) + x_margin)
-            self.main_ax.set_ylim(min(y_plot) - y_margin, max(y_plot) + y_margin)
+            if self.auto_scale_enabled:
+                x_margin = (max(x_plot) - min(x_plot)) * 0.05 if max(x_plot) > min(x_plot) else 1
+                y_margin = (max(y_plot) - min(y_plot)) * 0.1 if max(y_plot) > min(y_plot) else 1
+                self.main_ax.set_xlim(min(x_plot) - x_margin, max(x_plot) + x_margin)
+                self.main_ax.set_ylim(min(y_plot) - y_margin, max(y_plot) + y_margin)
+            else:
+                # Restore previous limits to preserve zoom (if they were saved)
+                if saved_xlim is not None and saved_ylim is not None:
+                    self.main_ax.set_xlim(saved_xlim)
+                    self.main_ax.set_ylim(saved_ylim)
         
         self.main_fig.tight_layout(pad=2.0)
         self.main_canvas.draw()
+    
+    def toggle_auto_scale(self):
+        """Toggle auto-scale on/off for graphs"""
+        self.auto_scale_enabled = not self.auto_scale_enabled
+        
+        if self.auto_scale_enabled:
+            # Auto-scale is ON
+            self.auto_scale_btn.configure(
+                text='🔓 Auto-Scale ON', 
+                fg_color='#1E88E5',
+                hover_color='#1565C0'
+            )
+            # Re-apply auto-scale to current view
+            if self.graph_mode_var.get() == "multi":
+                self.update_multi_panel_graphs()
+            else:
+                self.on_axis_change()
+        else:
+            # Auto-scale is OFF (zoom locked)
+            self.auto_scale_btn.configure(
+                text='🔒 Zoom Locked', 
+                fg_color='#FF9800',
+                hover_color='#F57C00'
+            )
+            # Don't change limits - preserve current zoom
     
     def update_statistics(self):
         """Calculate and update real-time statistics"""
@@ -809,16 +883,23 @@ class MainTab(BaseTab):
             self.current_flow_rate = flow_rate
             experiment_program = [{'duration': duration, 'flow_rate': flow_rate, 'valve_setting': valve_setting}]
             
-            # Check if file needs to be created (separate from new measurement)
-            file_needs_creation = not self.data_handler.file_path or not os.path.exists(self.data_handler.file_path) or self.data_handler.file is None
+            # Check if we should create new file or resume existing
+            file_is_closed = (
+                not self.data_handler.file_path or  # No file path
+                not os.path.exists(self.data_handler.file_path) or  # File doesn't exist
+                self.data_handler.file is None or  # File handle is None
+                getattr(self.data_handler, 'file_closed', False)  # File was explicitly closed by Finish
+            )
             
-            # For multiple measurements: always treat as new measurement if base_time is None
-            # Continuation only happens if experiment_base_time exists and we're resuming same measurement
-            is_new_experiment = self.experiment_base_time is None
+            # Determine if this is a new experiment or resume
+            is_new_experiment = (
+                self.experiment_base_time is None or  # No active experiment timing
+                file_is_closed  # File was closed (by Finish)
+            )
             
             if is_new_experiment:
-                # New measurement - save metadata and create file if needed
-                if file_needs_creation:
+                # NEW EXPERIMENT - always create new file
+                if file_is_closed:
                     metadata = {
                         'name': file_name,
                         'description': self.exp_desc_entry.get().strip(),
@@ -829,19 +910,22 @@ class MainTab(BaseTab):
                     self.data_handler.set_custom_filename(file_name)
                     self.data_handler.set_metadata(metadata)
                     self.data_handler.create_new_file()
-                # Always increment measurement counter for new measurement
-                self.measurement_counter += 1
-                self.last_total_time = 0.0
-                self.experiment_base_time = time.time()
+                    
+                    # Reset experiment timing
+                    self.last_total_time = 0.0
+                    self.experiment_base_time = time.time()
             else:
-                # Continuing existing experiment (resume)
+                # RESUME EXISTING EXPERIMENT (after Stop/Pause)
+                # File is still open, continue writing to it
                 if self.experiment_base_time is None:
-                    if len(self.flow_x_data) > 0:
-                        self.last_total_time = max(self.flow_x_data) if self.flow_x_data else 0.0
-                        self.experiment_base_time = time.time() - self.last_total_time
-                    else:
-                        self.last_total_time = 0.0
-                        self.experiment_base_time = time.time()
+                    # Calculate base time from existing data
+                    with self.data_lock:
+                        if len(self.flow_x_data) > 0:
+                            self.last_total_time = max(self.flow_x_data) if self.flow_x_data else 0.0
+                            self.experiment_base_time = time.time() - self.last_total_time
+                        else:
+                            self.experiment_base_time = time.time()
+                            self.last_total_time = 0.0
             
             if self.update_queue:
                 self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Recording...', 'red')))
@@ -866,7 +950,7 @@ class MainTab(BaseTab):
             messagebox.showerror('Error', f'Unexpected error: {e}')
     
     def stop_recording(self):
-        """Stop recording - preserves data for continuation"""
+        """Stop recording - PAUSE mode (file remains open for resume)"""
         self.exp_manager.stop_experiment()
         
         # Update last total time based on current data (thread-safe - BUG FIX #1)
@@ -874,9 +958,14 @@ class MainTab(BaseTab):
             if len(self.flow_x_data) > 0:
                 self.last_total_time = max(self.flow_x_data) if self.flow_x_data else 0.0
         
+        # IMPORTANT: File remains open - this is a PAUSE, not a finish
+        # User can click Start again to resume in the same file
+        
         if self.update_queue:
-            self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Stopped', 'orange')))
-            self.update_queue.put(('UPDATE_STATUS', f'Recording stopped. Total time: {self.last_total_time:.1f}s. Click Start to continue.'))
+            self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Paused', 'orange')))
+            self.update_queue.put(('UPDATE_STATUS', 
+                f'Recording paused. Total time: {self.last_total_time:.1f}s. '
+                f'File remains open. Click Start to resume, or Finish to close file.'))
     
     def start_recording_from_program_tab(self, experiment_program):
         """
@@ -913,15 +1002,27 @@ class MainTab(BaseTab):
         if experiment_program and 'flow_rate' in experiment_program[0]:
             self.current_flow_rate = experiment_program[0]['flow_rate']
         
-        # Check if file needs to be created (separate from new measurement)
-        file_needs_creation = not self.data_handler.file_path or not os.path.exists(self.data_handler.file_path) or self.data_handler.file is None
+        # Check if we should create new file or resume existing (same logic as start_recording)
+        file_is_closed = (
+            not self.data_handler.file_path or  # No file path
+            not os.path.exists(self.data_handler.file_path) or  # File doesn't exist
+            self.data_handler.file is None or  # File handle is None
+            getattr(self.data_handler, 'file_closed', False)  # File was explicitly closed by Finish
+        )
         
-        # For multiple measurements: always treat as new measurement if base_time is None
-        is_new_experiment = self.experiment_base_time is None
+        # Determine if this is a new experiment or resume
+        is_new_experiment = (
+            self.experiment_base_time is None or  # No active experiment timing
+            file_is_closed  # File was closed (by Finish)
+        )
         
         if is_new_experiment:
-            # Same metadata logic as start_recording()
-            if file_needs_creation:
+            # NEW EXPERIMENT - always create new file
+            if file_is_closed:
+                # Reset measurement counter for new experiment
+                self.measurement_counter = 0
+                
+                # Create new file with metadata
                 metadata = {
                     'name': file_name,
                     'description': self.exp_desc_entry.get().strip(),
@@ -933,20 +1034,22 @@ class MainTab(BaseTab):
                 self.data_handler.set_custom_filename(file_name)
                 self.data_handler.set_metadata(metadata)
                 self.data_handler.create_new_file()
-            # Always increment measurement counter for new measurement
-            self.measurement_counter += 1
-            self.last_total_time = 0.0
-            self.experiment_base_time = time.time()
+                
+                # Reset experiment timing
+                self.last_total_time = 0.0
+                self.experiment_base_time = time.time()
         else:
-            # Same continuation logic as start_recording()
+            # RESUME EXISTING EXPERIMENT (after Stop/Pause)
+            # File is still open, continue writing to it
             if self.experiment_base_time is None:
+                # Calculate base time from existing data
                 with self.data_lock:
                     if len(self.flow_x_data) > 0:
                         self.last_total_time = max(self.flow_x_data) if self.flow_x_data else 0.0
                         self.experiment_base_time = time.time() - self.last_total_time
                     else:
-                        self.last_total_time = 0.0
                         self.experiment_base_time = time.time()
+                        self.last_total_time = 0.0
         
         # Same UI updates as start_recording()
         if self.update_queue:
@@ -965,19 +1068,47 @@ class MainTab(BaseTab):
         return True
     
     def finish_recording(self):
-        """Finish recording gracefully - keeps file open for multiple measurements"""
+        """Finish recording - CLOSE file permanently and convert to Excel"""
         self.exp_manager.finish_experiment()
         
-        # Don't close the file - keep it open for multiple measurements in same file
-        # File will be closed only when application closes
+        # Close the file permanently
+        if self.data_handler.file_path and self.data_handler.file:
+            # Ensure all data is flushed
+            self.data_handler.file.flush()
+            
+            # Close CSV file
+            self.data_handler.close_file()
+            
+            # Automatically convert to Excel
+            csv_path = self.data_handler.file_path
+            excel_path = csv_path.replace('.csv', '.xlsx')
+            
+            try:
+                success = self.data_handler.export_to_excel(excel_path)
+                if success:
+                    print(f"Automatically converted to Excel: {excel_path}")
+                    if self.update_queue:
+                        self.update_queue.put(('UPDATE_STATUS', 
+                            f'Experiment finished. File closed and converted to Excel: {excel_path}'))
+                else:
+                    print("Warning: CSV file closed but Excel conversion failed")
+                    if self.update_queue:
+                        self.update_queue.put(('UPDATE_STATUS', 
+                            'Experiment finished. CSV file closed. Excel conversion failed - check console.'))
+            except Exception as e:
+                print(f"Error during automatic Excel conversion: {e}")
+                if self.update_queue:
+                    self.update_queue.put(('UPDATE_STATUS', 
+                        f'Experiment finished. CSV file closed. Excel conversion error: {e}'))
         
-        # Reset cumulative time for next experiment
+        # Reset all experiment state for new experiment
         self.last_total_time = 0.0
         self.experiment_base_time = None
+        self.measurement_counter = 0
         
         if self.update_queue:
             self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Completed', 'green')))
-            self.update_queue.put(('UPDATE_STATUS', 'Experiment finished. Ready for new experiment.'))
+            self.update_queue.put(('UPDATE_FILE', 'No file - will create new file on next Start'))
     
     def clear_graph(self):
         """Clear all graphs"""
@@ -1143,17 +1274,15 @@ class MainTab(BaseTab):
             status_color = pump_info.get('status_color', 'gray')
             self.pump_status_label.configure(text=status_text, text_color=status_color)
             
-            # Update port
-            port_text = pump_info.get('port', 'N/A')
-            self.pump_port_label.configure(text=port_text)
+            # Update port - commented out (not displayed)
+            # port_text = pump_info.get('port', 'N/A')
+            # self.pump_port_label.configure(text=port_text)
             
-            # Update flow rate
-            flow_rate = pump_info.get('current_flow_rate', 0.0)
-            self.pump_flow_label.configure(text=f'{flow_rate:.2f} ml/min')
+            # Update flow rate - commented out (not displayed)
+            # flow_rate = pump_info.get('current_flow_rate', 0.0)
+            # self.pump_flow_label.configure(text=f'{flow_rate:.2f} ml/min')
             
-            # Update max flow rate display
-            max_flow = pump_info.get('max_flow_rate', 5.0)
-            self.pump_max_flow_label.configure(text=f'{max_flow:.1f} ml/min')
+            # Max flow rate is fixed at 5.0 ml/min (no need to display)
         except Exception as e:
             print(f"Error updating pump UI: {e}")
             self.pump_status_label.configure(text='Error', text_color='red')
@@ -1231,13 +1360,15 @@ class MainTab(BaseTab):
         
         # Update UI labels / visible fields
         if mode == "voltage":
-            self.keithley_bias_label.configure(text='Bias Voltage (V):')
-            self.keithley_current_limit_entry.pack(side='left', padx=5)
-            self.keithley_voltage_limit_entry.pack_forget()
-        else:  # current mode
+            # Voltage mode = Source Current / Measure Voltage (למדוד מתח)
             self.keithley_bias_label.configure(text='Bias Current (A):')
             self.keithley_voltage_limit_entry.pack(side='left', padx=5)
             self.keithley_current_limit_entry.pack_forget()
+        else:  # current mode
+            # Current mode = Source Voltage / Measure Current (למדוד זרם)
+            self.keithley_bias_label.configure(text='Bias Voltage (V):')
+            self.keithley_current_limit_entry.pack(side='left', padx=5)
+            self.keithley_voltage_limit_entry.pack_forget()
 
         # --- New: Safe automatic mode switch sequence ---
         try:
@@ -1306,14 +1437,15 @@ class MainTab(BaseTab):
                     bias_value = float(self.keithley_bias_entry.get())
                     
                     if mode == "voltage":
+                        # Voltage mode = Source Current / Measure Voltage (למדוד מתח)
+                        voltage_limit = float(self.keithley_voltage_limit_entry.get())
+                        self.hw_controller.setup_smu_for_current_source(voltage_limit)
+                        self.hw_controller.set_smu_current(bias_value)
+                    else:  # current mode
+                        # Current mode = Source Voltage / Measure Current (למדוד זרם)
                         current_limit = float(self.keithley_current_limit_entry.get())
                         self.hw_controller.setup_smu_for_iv_measurement(current_limit)
                         self.hw_controller.set_smu_voltage(bias_value, current_limit)
-                    else:  # current mode
-                        voltage_limit = float(self.keithley_voltage_limit_entry.get())
-                        # Setup for current source mode
-                        self.hw_controller.setup_smu_for_current_source(voltage_limit)
-                        self.hw_controller.set_smu_current(bias_value)
                     
                     if self.update_queue:
                         self.update_queue.put(('UPDATE_STATUS', f'SMU output enabled: {bias_value} {"V" if mode == "voltage" else "A"}'))
@@ -1345,6 +1477,46 @@ class MainTab(BaseTab):
                 messagebox.showerror('Error', 'No experiment data to export. Run an experiment first.')
         except Exception as e:
             messagebox.showerror('Error', f'Error exporting to Excel: {e}\n\nPlease check:\n- File is not open in another program\n- You have write permissions\n- Disk has enough space')
+    
+    def add_segment_label(self):
+        """Add a segment label marker to the data file"""
+        segment_text = self.segment_entry.get().strip()
+        
+        if not segment_text:
+            messagebox.showwarning('Warning', 'Please enter a segment label.')
+            return
+        
+        if not self.data_handler.file_path or not self.data_handler.file:
+            messagebox.showwarning('Warning', 'No active recording. Start recording first.')
+            return
+        
+        # Create a special data point to mark segment
+        current_time = 0.0
+        if self.experiment_base_time:
+            current_time = time.time() - self.experiment_base_time
+        
+        segment_data = {
+            "measurement_id": "SEGMENT",
+            "time": current_time,
+            "flow_setpoint": "",
+            "pump_flow_read": f"--- {segment_text} ---",
+            "pressure_read": "",
+            "temp_read": "",
+            "level_read": "",
+            "program_step": "SEGMENT_MARKER",
+            "voltage": "",
+            "current": "",
+            "target_voltage": ""
+        }
+        
+        # Write segment marker to file
+        self.data_handler.append_data(segment_data)
+        
+        # Clear entry for next segment
+        self.segment_entry.delete(0, 'end')
+        
+        if self.update_queue:
+            self.update_queue.put(('UPDATE_STATUS', f'Segment marker added: "{segment_text}"'))
     
     def export_graph_png(self):
         """Export current graph as PNG"""
@@ -1436,8 +1608,12 @@ class MainTab(BaseTab):
             
             if self.update_queue:
                 temp_str = f", Temp={temperature}°C" if temperature else ""
+                measurement_mode_str = ""
+                if step.get('measurement_mode'):
+                    mode_display = "Voltage" if step.get('measurement_mode') == 'voltage' else "Current"
+                    measurement_mode_str = f", Mode={mode_display}"
                 self.update_queue.put(('UPDATE_STATUS', 
-                    f"Executing step: Duration={duration}s, Flow Rate={flow_rate} ml/min{temp_str}"))
+                    f"Executing step: Duration={duration}s, Flow Rate={flow_rate} ml/min{temp_str}{measurement_mode_str}"))
             
             # Set heating plate temperature if provided (optional, backward compatible)
             if temperature is not None:
@@ -1484,19 +1660,36 @@ class MainTab(BaseTab):
             # Setup Keithley 2450 if enabled
             if self.keithley_output_enabled and self.hw_controller.smu is not None:
                 try:
-                    mode = self.keithley_mode_var.get()
+                    # Check if this step specifies a measurement_mode (from program table)
+                    measurement_mode = step.get('measurement_mode', None)
+                    
+                    if measurement_mode:
+                        # Use measurement_mode from program step
+                        mode = measurement_mode
+                        # Update UI to reflect the current mode
+                        self.after(0, lambda m=mode: self.keithley_mode_var.set(m))
+                        # Update UI fields (show/hide appropriate limit fields)
+                        self.after(0, self.on_keithley_mode_change)
+                        print(f"[EXPERIMENT_THREAD] Step specifies measurement_mode: {mode}")
+                    else:
+                        # Fallback to UI setting (backward compatibility)
+                        mode = self.keithley_mode_var.get()
+                        print(f"[EXPERIMENT_THREAD] Using measurement_mode from UI: {mode}")
+                    
                     bias_value = float(self.keithley_bias_entry.get())
                     
                     if mode == "voltage":
-                        current_limit = float(self.keithley_current_limit_entry.get())
-                        print(f"[EXPERIMENT_THREAD] Setting up Keithley: Voltage mode, Bias={bias_value}V, Limit={current_limit}A")
-                        self.hw_controller.setup_smu_for_iv_measurement(current_limit)
-                        self.hw_controller.set_smu_voltage(bias_value, current_limit)
-                    else:  # current mode
+                        # Voltage mode = Source Current / Measure Voltage (למדוד מתח)
                         voltage_limit = float(self.keithley_voltage_limit_entry.get())
-                        print(f"[EXPERIMENT_THREAD] Setting up Keithley: Current mode, Bias={bias_value}A, Limit={voltage_limit}V")
+                        print(f"[EXPERIMENT_THREAD] Setting up Keithley: Voltage mode (measure voltage), Bias={bias_value}A, Limit={voltage_limit}V")
                         self.hw_controller.setup_smu_for_current_source(voltage_limit)
                         self.hw_controller.set_smu_current(bias_value)
+                    else:  # current mode
+                        # Current mode = Source Voltage / Measure Current (למדוד זרם)
+                        current_limit = float(self.keithley_current_limit_entry.get())
+                        print(f"[EXPERIMENT_THREAD] Setting up Keithley: Current mode (measure current), Bias={bias_value}V, Limit={current_limit}A")
+                        self.hw_controller.setup_smu_for_iv_measurement(current_limit)
+                        self.hw_controller.set_smu_voltage(bias_value, current_limit)
                     
                     print(f"[EXPERIMENT_THREAD] Keithley 2450 configured and enabled")
                 except (ValueError, Exception) as e:
@@ -1586,8 +1779,12 @@ class MainTab(BaseTab):
                 keithley_current = None
                 if self.keithley_output_enabled and self.hw_controller.smu is not None:
                     try:
-                        # Get current mode to pass to measurement function
-                        current_mode = self.keithley_mode_var.get()  # "voltage" or "current"
+                        # Get current mode - prefer step's measurement_mode, fallback to UI
+                        measurement_mode = step.get('measurement_mode', None)
+                        if measurement_mode:
+                            current_mode = measurement_mode
+                        else:
+                            current_mode = self.keithley_mode_var.get()  # "voltage" or "current"
                         
                         # Measure with correct mode
                         smu_measurement = self.hw_controller.measure_smu(mode=current_mode)
