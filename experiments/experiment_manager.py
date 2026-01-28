@@ -4,6 +4,7 @@ Experiment Manager - Main class for managing experiments
 
 from experiments.experiment_types.time_dependent import TimeDependentExperiment
 from experiments.experiment_types.iv_experiment import IVExperiment
+from experiments.experiment_types.cv_experiment import CVExperiment
 from experiments.safety_checks import SafetyChecker
 
 
@@ -21,6 +22,7 @@ class ExperimentManager:
         # Create instances of experiment types
         self.time_dependent_exp = TimeDependentExperiment(hardware_controller, data_handler)
         self.iv_exp = IVExperiment(hardware_controller, data_handler)
+        self.cv_exp = CVExperiment(hardware_controller, data_handler)
         
         # Safety checks (bypassed for now - sensors not yet installed)
         self.safety_checker = SafetyChecker(hardware_controller, bypass_checks=True)
@@ -79,6 +81,20 @@ class ExperimentManager:
         self.current_experiment = self.iv_exp
         self.iv_exp.is_running = True
         self.iv_exp.run(start_v, end_v, step_v, delay)
+        self.is_running = False
+        self.current_experiment = None
+    
+    def run_cv_experiment(self, v1, v2, v3, v4, points_per_second, current_range):
+        """
+        Run Cyclic Voltammetry (CV) experiment using TSP
+        v1, v2, v3, v4: Voltage vertices (V)
+        points_per_second: Sampling density (points/sec)
+        current_range: Manual current range (A)
+        """
+        self.is_running = True
+        self.current_experiment = self.cv_exp
+        self.cv_exp.is_running = True
+        self.cv_exp.run(v1, v2, v3, v4, points_per_second, current_range)
         self.is_running = False
         self.current_experiment = None
 

@@ -5,6 +5,9 @@ Flow sensor (Biotech AB-40010) control module
 import time
 import math
 from hardware.base import HardwareBase
+from utils.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class FlowSensor(HardwareBase):
@@ -90,7 +93,7 @@ class FlowSensor(HardwareBase):
                 flow_rate = voltage * 2.0  # Placeholder conversion
                 return flow_rate
             except Exception as e:
-                print(f"Error reading flow sensor: {e}")
+                logger.debug(f"Error reading flow sensor: {e}")
                 # Return simulated value on error
                 elapsed = time.time() - self.sim_start_time
                 if not hasattr(self, 'flow_change_time'):

@@ -5,6 +5,9 @@ Level sensor control module
 import time
 import math
 from hardware.base import HardwareBase
+from utils.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class LevelSensor(HardwareBase):
@@ -71,7 +74,7 @@ class LevelSensor(HardwareBase):
             # Check if voltage is None (read failed)
             if voltage is None:
                 # In real mode, return None on read failure
-                print(f"[LEVEL_SENSOR] Failed to read voltage from channel {self.channel}")
+                logger.debug(f"Level sensor: Failed to read voltage from channel {self.channel}")
                 return None
             
             # Debug: Print voltage reading (can be enabled for debugging)
@@ -92,7 +95,7 @@ class LevelSensor(HardwareBase):
             return max(0.0, min(1.0, level))  # Clamp to 0-1
             
         except Exception as e:
-            print(f"Error reading level sensor: {e}")
+            logger.debug(f"Error reading level sensor: {e}")
             # In real mode, return None on error
             return None
 

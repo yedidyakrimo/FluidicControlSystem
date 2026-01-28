@@ -4,6 +4,9 @@ import csv
 from datetime import datetime
 import os  # Library for interacting with the operating system, used here for file paths.
 import pandas as pd  # For Excel export functionality
+from utils.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 # This class handles saving data to a file.
@@ -22,7 +25,7 @@ class DataHandler:
         # Check if the data folder exists; if not, create it.
         if not os.path.exists(self.data_folder):
             os.makedirs(self.data_folder)
-            print(f"Created data folder: {self.data_folder}")
+            logger.debug(f"Created data folder: {self.data_folder}")
 
     def set_custom_filename(self, filename):
         """
@@ -30,7 +33,7 @@ class DataHandler:
         filename: The base filename (without extension)
         """
         self.custom_filename = filename
-        print(f"Custom filename set to: {filename}")
+        logger.debug(f"Custom filename set to: {filename}")
     
     def set_metadata(self, metadata):
         """
@@ -38,7 +41,7 @@ class DataHandler:
         metadata: Dictionary with experiment metadata (name, description, tags, operator, etc.)
         """
         self.metadata = metadata
-        print(f"Metadata set: {metadata}")
+        logger.debug(f"Metadata set: {metadata}")
 
     # This function creates a new CSV file for a new experiment.
     def create_new_file(self):
@@ -94,7 +97,7 @@ class DataHandler:
             with open(metadata_file, 'w') as f:
                 json.dump(self.metadata, f, indent=2)
         
-        print(f"New data file created at: {self.file_path}")
+        logger.info(f"New data file created at: {self.file_path}")
 
     # This function appends a new data point (a dictionary) to the CSV file.
     def append_data(self, data_point):
@@ -107,9 +110,9 @@ class DataHandler:
                 # You can add a print statement for debugging if needed:
                 # print(f"Appended data: {data_point}")
             except Exception as e:
-                print(f"Error writing data: {e}")
+                logger.error(f"Error writing data: {e}")
         elif not self.writer:
-            print("Warning: No file open for writing data")
+            logger.warning("No file open for writing data")
 
     def log_flow_change(self, new_flow_rate):
         """
@@ -131,11 +134,11 @@ class DataHandler:
                     "current": ""
                 }
                 self.writer.writerow(flow_change_data)
-                print(f"Flow rate change logged: {new_flow_rate} ml/min")
+                logger.debug(f"Flow rate change logged: {new_flow_rate} ml/min")
             except Exception as e:
-                print(f"Error logging flow change: {e}")
+                logger.error(f"Error logging flow change: {e}")
         else:
-            print("Warning: No file open for logging flow change")
+            logger.warning("No file open for logging flow change")
 
     # This function closes the file. It's crucial to call this at the end of every experiment.
     def close_file(self):
@@ -147,7 +150,7 @@ class DataHandler:
             self.file = None
             self.writer = None
             self.file_closed = True  # Mark as closed
-            print(f"Data file closed and sealed: {self.file_path}")
+            logger.info(f"Data file closed and sealed: {self.file_path}")
 
     def export_to_excel(self, output_path=None):
         """
@@ -155,7 +158,7 @@ class DataHandler:
         output_path: Optional path for Excel file. If None, uses same name as CSV with .xlsx extension
         """
         if not self.file_path or not os.path.exists(self.file_path):
-            print("No data file to export. Run an experiment first.")
+            logger.warning("No data file to export. Run an experiment first.")
             return False
         
         try:
@@ -168,7 +171,7 @@ class DataHandler:
             
             # Check if file is empty or has no valid data
             if df.empty or len(df) == 0:
-                print("CSV file is empty. No data to export.")
+                logger.warning("CSV file is empty. No data to export.")
                 return False
             
             # Generate output path if not provided
@@ -217,22 +220,20 @@ class DataHandler:
                 summary_df = pd.DataFrame(summary_data)
                 summary_df.to_excel(writer, sheet_name='Summary', index=False)
             
-            print(f"Data exported to Excel: {output_path}")
+            logger.info(f"Data exported to Excel: {output_path}")
             return True
             
         except pd.errors.EmptyDataError:
-            print("CSV file contains no data rows (only comments or headers).")
+            logger.warning("CSV file contains no data rows (only comments or headers).")
             return False
         except pd.errors.ParserError as e:
-            print(f"Error parsing CSV file: {e}")
+            logger.error(f"Error parsing CSV file: {e}")
             return False
         except PermissionError:
-            print(f"Permission denied: Cannot write to {output_path}. File may be open in another program.")
+            logger.error(f"Permission denied: Cannot write to {output_path}. File may be open in another program.")
             return False
         except Exception as e:
-            print(f"Error exporting to Excel: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error exporting to Excel: {e}", exc_info=True)
             return False
 
     def export_iv_to_excel(self, voltage_data, current_data, output_path=None):
@@ -275,11 +276,11 @@ class DataHandler:
                 stats_df = pd.DataFrame(stats_data)
                 stats_df.to_excel(writer, sheet_name='I-V Statistics', index=False)
             
-            print(f"I-V data exported to Excel: {output_path}")
+            logger.info(f"I-V data exported to Excel: {output_path}")
             return True
             
         except Exception as e:
-            print(f"Error exporting I-V data to Excel: {e}")
+            logger.error(f"Error exporting I-V data to Excel: {e}", exc_info=True)
             return False
 
 

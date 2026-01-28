@@ -130,6 +130,22 @@ class ProgramTab(BaseTab):
         self.program_status_label = ctk.CTkLabel(status_content, text='Ready', width=400)
         self.program_status_label.pack(side='left', padx=5)
         
+        # Step Progress Frame
+        step_progress_frame = ctk.CTkFrame(status_frame)
+        step_progress_frame.pack(fill='x', padx=5, pady=5)
+        
+        self.step_info_label = ctk.CTkLabel(step_progress_frame, text="Step: - / -", 
+                                           font=('Helvetica', 11))
+        self.step_info_label.pack(side='left', padx=5)
+        
+        self.step_time_label = ctk.CTkLabel(step_progress_frame, text="Time remaining: -", 
+                                           font=('Helvetica', 10))
+        self.step_time_label.pack(side='left', padx=5)
+        
+        self.step_progress_bar = ctk.CTkProgressBar(step_progress_frame, width=300)
+        self.step_progress_bar.pack(side='left', padx=5)
+        self.step_progress_bar.set(0)
+        
         # Initialize with one empty row
         self.add_step_row()
     
@@ -479,6 +495,22 @@ class ProgramTab(BaseTab):
             messagebox.showerror('Error', f"Error running program: {e}")
             import traceback
             traceback.print_exc()
+    
+    def update_step_progress(self, step_index, total_steps, step_remaining, step_progress):
+        """Update step progress widgets"""
+        if hasattr(self, 'step_info_label'):
+            self.step_info_label.configure(text=f"Step: {step_index} / {total_steps}")
+        
+        if hasattr(self, 'step_time_label'):
+            if step_remaining > 60:
+                mins = int(step_remaining // 60)
+                secs = int(step_remaining % 60)
+                self.step_time_label.configure(text=f"Time remaining: {mins}m {secs}s")
+            else:
+                self.step_time_label.configure(text=f"Time remaining: {int(step_remaining)}s")
+        
+        if hasattr(self, 'step_progress_bar'):
+            self.step_progress_bar.set(step_progress)
     
     def stop_program(self):
         """Stop program - triggers MainTab.stop_recording()"""

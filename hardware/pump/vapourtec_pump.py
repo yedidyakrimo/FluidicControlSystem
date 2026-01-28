@@ -6,6 +6,9 @@ Updated to use the vapourtec library
 import time
 import math
 from hardware.base import HardwareBase
+from utils.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 # Try to import the vapourtec library
 try:
@@ -13,13 +16,13 @@ try:
     VAPOURTEC_AVAILABLE = True
 except ImportError:
     VAPOURTEC_AVAILABLE = False
-    print("=" * 60)
-    print("WARNING: vapourtec library not found!")
-    print("Pump will run in simulation mode.")
-    print("")
-    print("To connect to the real pump, install the library:")
-    print("  pip install vapourtec")
-    print("=" * 60)
+    logger.warning("=" * 60)
+    logger.warning("WARNING: vapourtec library not found!")
+    logger.warning("Pump will run in simulation mode.")
+    logger.warning("")
+    logger.warning("To connect to the real pump, install the library:")
+    logger.warning("  pip install vapourtec")
+    logger.warning("=" * 60)
 
 
 class VapourtecPump(HardwareBase):
@@ -75,7 +78,7 @@ class VapourtecPump(HardwareBase):
             
             # CRITICAL PATCH: The library does not natively support setting the "Black" tube type
             # This prevents the pump from accepting flow rates. We must send a raw command.
-            print(f"[SETUP] Setting Tube Type to ID {self.tube_type} (Black tube)...")
+            logger.debug(f"Setting Tube Type to ID {self.tube_type} (Black tube)...")
             self.ser.write(f'STTA {self.tube_type}\r\n'.encode())
             time.sleep(0.5)  # Wait for hardware to process the command
             
@@ -83,12 +86,12 @@ class VapourtecPump(HardwareBase):
             if hasattr(self.pump, 'MODE_FLOW'):
                 self.pump.set_mode(self.pump.MODE_FLOW)
             
-            print(f"[SUCCESS] Connected to Vapourtec pump on port {self.port}")
+            logger.info(f"Connected to Vapourtec pump on port {self.port}")
             self.connected = True
             self.simulation_mode = False
             return True
         except Exception as e:
-            print(f"Error connecting to Vapourtec pump: {e}")
+            logger.warning(f"Error connecting to Vapourtec pump: {e}")
             self.pump = None
             self.ser = None
             self.enable_simulation()
@@ -101,7 +104,7 @@ class VapourtecPump(HardwareBase):
                 self.stop()  # Stop pump before disconnecting
                 self.pump.disconnect()
             except Exception as e:
-                print(f"Error during disconnect: {e}")
+                logger.debug(f"Error during disconnect: {e}")
             self.pump = None
             self.ser = None
         self.connected = False
@@ -116,12 +119,12 @@ class VapourtecPump(HardwareBase):
             True if successfully connected, False otherwise
         """
         if not VAPOURTEC_AVAILABLE:
-            print("Vapourtec library not available. Cannot force reconnect.")
+            logger.debug("Vapourtec library not available. Cannot force reconnect.")
             self.enable_simulation()
             return False
         
         # --- Aggressive Cleanup First ---
-        print(f"[FORCE_RECONNECT] Attempting hard reconnection to pump on port {self.port}...")
+        logger.debug(f"Attempting hard reconnection to pump on port {self.port}...")
         
         try:
             # Stop pump before disconnecting
@@ -143,7 +146,7 @@ class VapourtecPump(HardwareBase):
                 except:
                     pass
         except Exception as e:
-            print(f"[FORCE_RECONNECT] Error during cleanup: {e}")
+            logger.debug(f"Error during cleanup: {e}")
         
         # Reset all references
         self.pump = None
@@ -155,7 +158,7 @@ class VapourtecPump(HardwareBase):
         max_retries = 2
         for attempt in range(max_retries):
             try:
-                print(f"[FORCE_RECONNECT] Connection attempt {attempt+1}/{max_retries}...")
+                logger.debug(f"Connection attempt {attempt+1}/{max_retries}...")
                 
                 # 1. Initialize Library
                 self.pump = SF10(self.port)
@@ -164,24 +167,24 @@ class VapourtecPump(HardwareBase):
                 # 2. CRITICAL: Send Black Tube Command
                 # Allow a tiny pause for serial to stabilize
                 time.sleep(0.2)
-                print(f"[FORCE_RECONNECT] Setting Tube Type to ID {self.tube_type} (Black tube)...")
+                logger.debug(f"Setting Tube Type to ID {self.tube_type} (Black tube)...")
                 self.ser.write(f'STTA {self.tube_type}\r\n'.encode())
                 time.sleep(0.5)  # Wait for hardware to process the command
                 
                 # 3. Set Mode
                 if hasattr(self.pump, 'MODE_FLOW'):
-                    print(f"[FORCE_RECONNECT] Setting mode to FLOW...")
+                    logger.debug("Setting mode to FLOW...")
                     self.pump.set_mode(self.pump.MODE_FLOW)
                 
                 # 4. Success!
-                print(f"[FORCE_RECONNECT] ✅ Connected successfully on attempt {attempt+1}")
+                logger.info(f"Connected successfully on attempt {attempt+1}")
                 self.connected = True
                 self.simulation_mode = False
                 return True
                 
             except Exception as e:
                 error_msg = str(e)
-                print(f"[FORCE_RECONNECT] Attempt {attempt+1} failed: {error_msg}")
+                logger.debug(f"Attempt {attempt+1} failed: {error_msg}")
                 
                 # Clean up specific to this failed attempt
                 try:
@@ -200,11 +203,11 @@ class VapourtecPump(HardwareBase):
                 
                 # If this was not the last attempt, wait and try again
                 if attempt < max_retries - 1:
-                    print("[FORCE_RECONNECT] Waiting 2 seconds for device to recover...")
+                    logger.debug("Waiting 2 seconds for device to recover...")
                     time.sleep(2.0)  # Critical wait for pump boot-up or port release
         
         # If we get here, all retries failed
-        print("[FORCE_RECONNECT] ❌ All connection attempts failed. Falling back to Simulation.")
+        logger.warning("All connection attempts failed. Falling back to Simulation.")
         self.enable_simulation()
         return False
     
@@ -223,29 +226,29 @@ class VapourtecPump(HardwareBase):
         """
         # Enforce maximum flow rate limit
         if flow_rate_ml_min > self.MAX_FLOW_RATE:
-            print(f"Warning: Flow rate {flow_rate_ml_min} ml/min exceeds maximum of {self.MAX_FLOW_RATE} ml/min. Setting to {self.MAX_FLOW_RATE} ml/min.")
+            logger.warning(f"Flow rate {flow_rate_ml_min} ml/min exceeds maximum of {self.MAX_FLOW_RATE} ml/min. Setting to {self.MAX_FLOW_RATE} ml/min.")
             flow_rate_ml_min = self.MAX_FLOW_RATE
         
         if flow_rate_ml_min < 0:
-            print(f"Warning: Flow rate cannot be negative. Setting to 0.")
+            logger.warning("Flow rate cannot be negative. Setting to 0.")
             flow_rate_ml_min = 0.0
         
         if self.pump and self.connected:
             try:
                 # Use library method - this works after tube type is set
                 self.pump.set_flow_rate(float(flow_rate_ml_min))
-                print(f"Set pump flow rate to {flow_rate_ml_min} ml/min.")
+                logger.debug(f"Set pump flow rate to {flow_rate_ml_min} ml/min.")
                 # Store for simulation fallback
                 self.previous_setpoint_flow = self.pump_setpoint_flow
                 self.pump_setpoint_flow = flow_rate_ml_min
                 self.flow_change_time = time.time()
                 return True
             except Exception as e:
-                print(f"Error setting flow rate: {e}")
+                logger.warning(f"Error setting flow rate: {e}")
                 return False
         else:
             # Simulation mode
-            print("Pump is not connected. Simulating flow rate setting.")
+            logger.debug("Pump is not connected. Simulating flow rate setting.")
             self.previous_setpoint_flow = self.pump_setpoint_flow
             self.pump_setpoint_flow = flow_rate_ml_min
             self.flow_change_time = time.time()
@@ -256,42 +259,40 @@ class VapourtecPump(HardwareBase):
         """Start the pump - following the exact sequence from working examples"""
         if self.pump and self.connected:
             try:
-                print("[PUMP] Starting pump...")
+                logger.debug("Starting pump...")
                 
                 # Step 1: Ensure tube type is set (should already be set in connect, but double-check)
                 if self.ser:
-                    print("[PUMP] Verifying tube type is set...")
+                    logger.debug("Verifying tube type is set...")
                     self.ser.write(f'STTA {self.tube_type}\r\n'.encode())
                     time.sleep(0.5)
                 
                 # Step 2: Ensure mode is set to FLOW
                 if hasattr(self.pump, 'MODE_FLOW'):
-                    print("[PUMP] Setting mode to FLOW...")
+                    logger.debug("Setting mode to FLOW...")
                     self.pump.set_mode(self.pump.MODE_FLOW)
                     time.sleep(0.2)
                 
                 # Step 3: Ensure flow rate is set before starting
                 if self.pump_setpoint_flow > 0:
-                    print(f"[PUMP] Setting flow rate to {self.pump_setpoint_flow} ml/min...")
+                    logger.debug(f"Setting flow rate to {self.pump_setpoint_flow} ml/min...")
                     self.pump.set_flow_rate(float(self.pump_setpoint_flow))
                     time.sleep(0.3)  # Wait for pump to process flow rate
                 
                 # Step 4: Start the pump using library method (as in working examples)
-                print("[PUMP] Calling pump.start()...")
+                logger.debug("Calling pump.start()...")
                 self.pump.start()
                 time.sleep(0.5)  # Wait for pump to actually start running
                 
                 self.is_running = True
-                print("[PUMP] Pump started successfully!")
+                logger.info("Pump started successfully!")
                 return True
             except Exception as e:
-                print(f"[PUMP ERROR] Error starting pump: {e}")
-                import traceback
-                traceback.print_exc()
+                logger.error(f"Error starting pump: {e}", exc_info=True)
                 self.is_running = False
                 return False
         else:
-            print("[PUMP] Pump is not connected. Simulating start.")
+            logger.debug("Pump is not connected. Simulating start.")
             self.is_running = True
             return True
     
@@ -301,13 +302,13 @@ class VapourtecPump(HardwareBase):
             try:
                 self.pump.stop()
                 self.is_running = False
-                print("Pump stopped.")
+                logger.debug("Pump stopped.")
                 return True
             except Exception as e:
-                print(f"Error stopping pump: {e}")
+                logger.warning(f"Error stopping pump: {e}")
                 return False
         else:
-            print("Pump is not connected. Simulating stop.")
+            logger.debug("Pump is not connected. Simulating stop.")
             self.is_running = False
             return True
     
@@ -360,14 +361,14 @@ class VapourtecPump(HardwareBase):
                                 except ValueError:
                                     pass
                             # Could not parse - return 0.0 as specified
-                            print(f"Warning: Could not parse pressure response: '{response}'. Returning 0.0")
+                            logger.debug(f"Could not parse pressure response: '{response}'. Returning 0.0")
                             return 0.0
                 else:
                     # No response - return 0.0 as specified
                     return 0.0
                     
             except Exception as e:
-                print(f"Error reading pressure: {e}")
+                logger.debug(f"Error reading pressure: {e}")
                 return None
         else:
             # Simulation mode - return simulated pressure
@@ -398,7 +399,7 @@ class VapourtecPump(HardwareBase):
                     "rpm": rpm
                 }
             except Exception as e:
-                print(f"Error reading pump data: {e}")
+                logger.debug(f"Error reading pump data: {e}")
                 return self._simulate_data()
         else:
             # Realistic simulation
@@ -492,7 +493,7 @@ class VapourtecPump(HardwareBase):
             except Exception as e:
                 # Timeout or communication error - device is not responsive
                 error_msg = str(e)
-                print(f"Pump health check failed: {error_msg}")
+                logger.debug(f"Pump health check failed: {error_msg}")
                 
                 # Close the connection explicitly
                 try:

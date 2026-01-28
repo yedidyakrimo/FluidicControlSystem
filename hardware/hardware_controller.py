@@ -10,6 +10,9 @@ from .sensors.pressure_sensor import PressureSensor
 from .sensors.temperature_sensor import TemperatureSensor
 from .sensors.flow_sensor import FlowSensor
 from .sensors.level_sensor import LevelSensor
+from utils.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class HardwareController:
@@ -109,12 +112,12 @@ class HardwareController:
                 # Write valve states to digital outputs
                 self.ni_daq.write_digital_output('port0/line0', valve_1_state)
                 self.ni_daq.write_digital_output('port0/line1', valve_2_state)
-                print(f"Valves set: Valve 1 (Main) = {valve_1_state}, Valve 2 (Rinsing) = {valve_2_state}")
+                logger.debug(f"Valves set: Valve 1 (Main) = {valve_1_state}, Valve 2 (Rinsing) = {valve_2_state}")
             except Exception as e:
-                print(f"Error controlling valves: {e}")
+                logger.error(f"Error controlling valves: {e}")
         else:
-            print(f"Setting valves: Valve 1 (Main) = {valve_1_state}, Valve 2 (Rinsing) = {valve_2_state}")
-            print("Running in simulation mode - valves not connected")
+            logger.debug(f"Setting valves: Valve 1 (Main) = {valve_1_state}, Valve 2 (Rinsing) = {valve_2_state}")
+            logger.debug("Running in simulation mode - valves not connected")
     
     def set_heating_plate_temp(self, temperature_celsius):
         """
@@ -128,12 +131,12 @@ class HardwareController:
                 voltage = max(0.0, min(5.0, voltage))  # Clamp to 0-5V
                 
                 self.ni_daq.write_analog_output('ao0', voltage)
-                print(f"Heating plate temperature set to {temperature_celsius}°C (Voltage: {voltage:.2f}V)")
+                logger.debug(f"Heating plate temperature set to {temperature_celsius}°C (Voltage: {voltage:.2f}V)")
             except Exception as e:
-                print(f"Error controlling heating plate: {e}")
+                logger.error(f"Error controlling heating plate: {e}")
         else:
-            print(f"Setting heating plate temperature to {temperature_celsius}°C")
-            print("Running in simulation mode - heating plate not connected")
+            logger.debug(f"Setting heating plate temperature to {temperature_celsius}°C")
+            logger.debug("Running in simulation mode - heating plate not connected")
     
     # --- SMU Functions (backward compatibility) ---
     def auto_detect_smu(self):
@@ -191,7 +194,7 @@ class HardwareController:
         5. If it was ON before → turn output ON again, otherwise leave it OFF.
         """
         if not self.smu:
-            print("SMU not connected. Cannot configure mode safely.")
+            logger.warning("SMU not connected - cannot configure mode safely")
             return False
 
         try:
@@ -200,14 +203,14 @@ class HardwareController:
             try:
                 was_on = self.get_smu_output_state()
             except Exception as e:
-                print(f"Warning: Could not read SMU output state: {e}")
+                logger.warning(f"Could not read SMU output state: {e}")
 
             # 2. If ON, stop safely (sets voltage to 0 and OUTP OFF)
             if was_on:
                 try:
                     self.smu.stop()
                 except Exception as e:
-                    print(f"Warning: Error while stopping SMU before mode change: {e}")
+                    logger.warning(f"Error while stopping SMU before mode change: {e}")
 
             # 3. Apply new setup (these functions may turn output ON internally)
             if mode == "voltage":
@@ -221,7 +224,7 @@ class HardwareController:
                 # 4. Reset bias to 0 V
                 self.set_smu_voltage(0.0)
             else:
-                print(f"Warning: Unknown SMU mode '{mode}'. Expected 'voltage' or 'current'.")
+                logger.warning(f"Unknown SMU mode '{mode}'. Expected 'voltage' or 'current'.")
                 return False
 
             # 5. Restore original output state
@@ -234,16 +237,14 @@ class HardwareController:
                     # Make sure output stays OFF
                     if self.smu.smu is not None:
                         self.smu.smu.write(self.smu.scpi.output_off())
-                print(f"SMU mode safely configured to '{mode}'. Original output state was: {'ON' if was_on else 'OFF'}")
+                logger.debug(f"SMU mode safely configured to '{mode}'. Original output state was: {'ON' if was_on else 'OFF'}")
             except Exception as e:
-                print(f"Warning: Could not restore SMU output state: {e}")
+                logger.warning(f"Could not restore SMU output state: {e}")
 
             return True
 
         except Exception as e:
-            print(f"Error in configure_smu_mode_safe: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error in configure_smu_mode_safe: {e}", exc_info=True)
             return False
     
     def get_smu_output_state(self):
@@ -272,7 +273,7 @@ class HardwareController:
         Cleanup all hardware connections
         Should be called when application is closing
         """
-        print("Cleaning up hardware connections...")
+        logger.info("Cleaning up hardware connections...")
         
         # Stop pump
         try:
@@ -280,7 +281,7 @@ class HardwareController:
             if hasattr(self.pump, 'disconnect'):
                 self.pump.disconnect()
         except Exception as e:
-            print(f"Error cleaning up pump: {e}")
+            logger.warning(f"Error cleaning up pump: {e}")
         
         # Stop SMU
         try:
@@ -288,14 +289,14 @@ class HardwareController:
             if hasattr(self.smu, 'disconnect'):
                 self.smu.disconnect()
         except Exception as e:
-            print(f"Error cleaning up SMU: {e}")
+            logger.warning(f"Error cleaning up SMU: {e}")
         
         # Disconnect MCusb-1408FS-Plus DAQ
         try:
             if hasattr(self.ni_daq, 'disconnect'):
                 self.ni_daq.disconnect()
         except Exception as e:
-            print(f"Error cleaning up MCusb-1408FS-Plus DAQ: {e}")
+            logger.warning(f"Error cleaning up MCusb-1408FS-Plus DAQ: {e}")
         
-        print("Hardware cleanup completed.")
+        logger.info("Hardware cleanup completed.")
 

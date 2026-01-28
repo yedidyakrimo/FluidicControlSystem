@@ -12,9 +12,13 @@ try:
 except ImportError:
     MCCULW_AVAILABLE = False
     ANALOG_OUTPUT_RANGE = None
-    print("mcculw library not available. MCusb-1408FS-Plus will run in simulation mode.")
+    import logging
+    logging.getLogger('hardware.ni_daq').warning("mcculw library not available. MCusb-1408FS-Plus will run in simulation mode.")
 
 from hardware.base import HardwareBase
+from utils.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class MCusb1408FS(HardwareBase):
@@ -39,7 +43,7 @@ class MCusb1408FS(HardwareBase):
     def connect(self):
         """Connect to MCusb-1408FS-Plus device"""
         if not MCCULW_AVAILABLE:
-            print("mcculw library not available. Running in simulation mode.")
+            logger.warning("mcculw library not available - running in simulation mode")
             self.enable_simulation()
             return False
         
@@ -48,15 +52,14 @@ class MCusb1408FS(HardwareBase):
             board_info = ul.get_board_name(self.board_num)
             if board_info:
                 self.board_id = self.board_num
-                print(f"Connected to {self.device_name} (Board {self.board_num})")
+                logger.info(f"Connected to {self.device_name} (Board {self.board_num})")
                 self.connected = True
                 self.simulation_mode = False
                 return True
             else:
                 raise Exception("Board not found")
         except Exception as e:
-            print(f"Error connecting to {self.device_name}: {e}")
-            print("Running in simulation mode.")
+            logger.warning(f"Error connecting to {self.device_name}: {e} - running in simulation mode")
             self.enable_simulation()
             return False
     
@@ -91,7 +94,7 @@ class MCusb1408FS(HardwareBase):
             
             # USB-1408FS-Plus has 4 analog input channels (0-3)
             if channel_num > 3:
-                print(f"Warning: Channel {channel_num} is out of range. USB-1408FS-Plus has 4 channels (0-3)")
+                logger.warning(f"Channel {channel_num} is out of range. USB-1408FS-Plus has 4 channels (0-3)")
                 return None
             
             if differential:
@@ -119,9 +122,8 @@ class MCusb1408FS(HardwareBase):
                     diff_voltage = hi_voltage - lo_voltage
                     return diff_voltage
                 except Exception as e:
-                    print(f"Error reading differential input: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    # Suppress repeated errors - filter will handle it
+                    logger.debug(f"Error reading differential input channel {channel}: {e}")
                     return None
             else:
                 # Single-ended measurement
@@ -137,7 +139,8 @@ class MCusb1408FS(HardwareBase):
                 
                 return voltage_volts
         except Exception as e:
-            print(f"Error reading analog input channel {channel}: {e}")
+            # Suppress repeated errors - filter will handle it
+            logger.debug(f"Error reading analog input channel {channel}: {e}")
             return None
     
     def write_digital_output(self, channel, value):
@@ -195,12 +198,12 @@ class MCusb1408FS(HardwareBase):
             # Write digital bit using mcculw function
             ul.d_bit_out(self.board_id, dio_port, bit_num, bit_value)
             
-            print(f"Digital output: Port {port_num}, Bit {bit_num} set to {bit_value} ({'ON' if value else 'OFF'})")
+            logger.debug(f"Digital output: Port {port_num}, Bit {bit_num} set to {bit_value} ({'ON' if value else 'OFF'})")
             return True
         except Exception as e:
-            print(f"Error writing digital output {channel}: {e}")
+            logger.warning(f"Error writing digital output {channel}: {e}")
             # Fallback: Try using analog output simulation if DIO fails
-            print(f"Attempting fallback to analog output simulation...")
+            logger.debug("Attempting fallback to analog output simulation...")
             try:
                 # Fallback to analog output simulation
                 ao_channel = 1
@@ -213,10 +216,10 @@ class MCusb1408FS(HardwareBase):
                     counts = int((voltage / 5.0) * MAX_DAC_COUNT)
                 counts = max(0, min(MAX_DAC_COUNT, counts))
                 ul.a_out(self.board_id, ao_channel, ANALOG_OUTPUT_RANGE, counts)
-                print(f"Fallback: Digital output {channel} -> Analog output {ao_channel}: {voltage}V")
+                logger.debug(f"Fallback: Digital output {channel} -> Analog output {ao_channel}: {voltage}V")
                 return True
             except Exception as e2:
-                print(f"Error in fallback analog output: {e2}")
+                logger.warning(f"Error in fallback analog output: {e2}")
                 return False
     
     def write_analog_output(self, channel, voltage):
@@ -263,6 +266,6 @@ class MCusb1408FS(HardwareBase):
             
             return True
         except Exception as e:
-            print(f"Error writing analog output channel {channel}: {e}")
+            logger.warning(f"Error writing analog output channel {channel}: {e}")
             return False
 

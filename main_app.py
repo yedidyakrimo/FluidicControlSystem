@@ -8,13 +8,13 @@ from utils.data_handler import DataHandler
 import queue
 import logging
 
-# Configure global logging: by default show only WARNING and above
-logging.basicConfig(
-    level=logging.WARNING,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+# Configure global logging using centralized config
+from utils.logger_config import setup_logging, get_logger
 
-logger = logging.getLogger(__name__)
+# Setup logging: by default show only WARNING and above
+setup_logging(level="WARNING", suppress_repeats=True)
+
+logger = get_logger(__name__)
 
 # Import new tab modules
 from gui.tabs.main_tab import MainTab
@@ -23,6 +23,7 @@ from gui.tabs.program_tab import ProgramTab
 from gui.tabs.browser_tab import BrowserTab
 from gui.tabs.scheduler_tab import SchedulerTab
 from gui.tabs.iv_program_tab import IVProgramTab
+from gui.tabs.cv_tab import CVTab
 
 # Set appearance mode and color theme
 ctk.set_appearance_mode("dark")
@@ -146,6 +147,16 @@ class FluidicControlApp(ctk.CTk):
             self.update_queue
         )
         self.scheduler_tab_instance.pack(fill='both', expand=True)
+        
+        cv_tab_frame = self.tabview.add("CV")
+        self.cv_tab_instance = CVTab(
+            cv_tab_frame,
+            self.hw_controller,
+            self.data_handler,
+            self.exp_manager,
+            self.update_queue
+        )
+        self.cv_tab_instance.pack(fill='both', expand=True)
     
     def check_update_queue(self):
         """Check for thread-safe GUI updates and route to appropriate tabs"""
@@ -286,6 +297,30 @@ class FluidicControlApp(ctk.CTk):
                     # Program tab status updates
                     if hasattr(self, 'program_tab_instance'):
                         self.program_tab_instance.program_status_label.configure(text=data)
+                
+                elif update_type in ['UPDATE_STEP_START', 'UPDATE_STEP_PROGRESS', 'UPDATE_STEP_COMPLETE']:
+                    # Step progress updates - update both Main Tab and Program Tab
+                    if hasattr(self, 'main_tab_instance') and self.main_tab_instance is not None:
+                        if update_type == 'UPDATE_STEP_START':
+                            step_index, total_steps, duration = data
+                            self.main_tab_instance.update_step_progress(step_index, total_steps, duration, 0.0)
+                        elif update_type == 'UPDATE_STEP_PROGRESS':
+                            step_index, total_steps, step_remaining, step_progress = data
+                            self.main_tab_instance.update_step_progress(step_index, total_steps, step_remaining, step_progress)
+                        elif update_type == 'UPDATE_STEP_COMPLETE':
+                            step_index, total_steps = data
+                            self.main_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0)
+                    
+                    if hasattr(self, 'program_tab_instance') and self.program_tab_instance is not None:
+                        if update_type == 'UPDATE_STEP_START':
+                            step_index, total_steps, duration = data
+                            self.program_tab_instance.update_step_progress(step_index, total_steps, duration, 0.0)
+                        elif update_type == 'UPDATE_STEP_PROGRESS':
+                            step_index, total_steps, step_remaining, step_progress = data
+                            self.program_tab_instance.update_step_progress(step_index, total_steps, step_remaining, step_progress)
+                        elif update_type == 'UPDATE_STEP_COMPLETE':
+                            step_index, total_steps = data
+                            self.program_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0)
                         
         except queue.Empty:
             pass
@@ -310,9 +345,18 @@ class FluidicControlApp(ctk.CTk):
                     pump_data = self.hw_controller.read_pump_data()
                     level = self.hw_controller.read_level_sensor()
                     
-                    self.update_queue.put(('UPDATE_READINGS', (pressure, temperature, pump_data['flow'], level * 100)))
+                    # Handle None values gracefully
+                    # Fix: Check for None before multiplication to avoid TypeError
+                    if level is not None:
+                        level_percent = level * 100
+                    else:
+                        level_percent = 0.0
+                    pump_flow = pump_data.get('flow', 0.0) if pump_data else 0.0
+                    
+                    self.update_queue.put(('UPDATE_READINGS', (pressure, temperature, pump_flow, level_percent)))
                 except Exception as e:
-                    logger.warning("Error reading sensors: %s", e)
+                    # Suppress repeated errors - filter will handle it
+                    logger.debug("Error reading sensors: %s", e)
                     # Continue execution even if sensor read fails
         except Exception as e:
             logger.error("Critical error in update_sensor_readings: %s", e, exc_info=True)
@@ -329,7 +373,7 @@ class FluidicControlApp(ctk.CTk):
     
     def on_closing(self):
         """Handle window close event - cleanup all resources"""
-        print("Application closing...")
+        logger.info("Application closing...")
         self.is_closing = True
         
         # Cancel ALL scheduled callbacks
@@ -370,27 +414,27 @@ class FluidicControlApp(ctk.CTk):
             except:
                 pass
         except Exception as e:
-            print(f"Error cancelling scheduled callbacks: {e}")
+            logger.warning(f"Error cancelling scheduled callbacks: {e}")
         
         # Stop all running experiments
         try:
             self.exp_manager.stop_experiment()
             self.exp_manager.finish_experiment()
         except Exception as e:
-            print(f"Error stopping experiments: {e}")
+            logger.warning(f"Error stopping experiments: {e}")
         
         # Close data file if open
         try:
             if self.data_handler.file_path:
                 self.data_handler.close_file()
         except Exception as e:
-            print(f"Error closing data file: {e}")
+            logger.warning(f"Error closing data file: {e}")
         
         # Cleanup hardware connections
         try:
             self.hw_controller.cleanup()
         except Exception as e:
-            print(f"Error cleaning up hardware: {e}")
+            logger.warning(f"Error cleaning up hardware: {e}")
         
         # Cleanup tabs
         try:
@@ -404,24 +448,26 @@ class FluidicControlApp(ctk.CTk):
                 self.browser_tab_instance.cleanup()
             if hasattr(self, 'scheduler_tab_instance'):
                 self.scheduler_tab_instance.cleanup()
+            if hasattr(self, 'cv_tab_instance'):
+                self.cv_tab_instance.cleanup()
         except Exception as e:
-            print(f"Error cleaning up tabs: {e}")
+            logger.warning(f"Error cleaning up tabs: {e}")
         
         # Destroy window and quit mainloop
-        print("Application closed.")
+        logger.info("Application closed.")
         import os
         
         try:
             # First, quit the mainloop to stop processing events
             self.quit()
         except Exception as e:
-            print(f"Error quitting mainloop: {e}")
+            logger.warning(f"Error quitting mainloop: {e}")
         
         try:
             # Then destroy the window
             self.destroy()
         except Exception as e:
-            print(f"Error destroying window: {e}")
+            logger.warning(f"Error destroying window: {e}")
         
         # Force exit to ensure process terminates immediately
         # This prevents CustomTkinter internal callbacks from causing errors

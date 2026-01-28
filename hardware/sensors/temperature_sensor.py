@@ -5,6 +5,9 @@ Temperature sensor control module
 import time
 import math
 from hardware.base import HardwareBase
+from utils.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class TemperatureSensor(HardwareBase):
@@ -89,8 +92,8 @@ class TemperatureSensor(HardwareBase):
                 voltage = self.ni_daq.read_analog_input(self.channel)
                 # Check if voltage is None (read failed)
                 if voltage is None:
-                    if self._should_print_error("voltage_none"):
-                        print("Warning: Temperature sensor read failed - voltage is None")
+                    # Suppress repeated errors - filter will handle it
+                    logger.debug("Temperature sensor read failed - voltage is None")
                     return None
                 
                 # Convert voltage to temperature using 4-20mA calibration
@@ -102,8 +105,8 @@ class TemperatureSensor(HardwareBase):
                 
                 return temperature
             except Exception as e:
-                if self._should_print_error("read_exception"):
-                    print(f"Error reading temperature sensor: {e}")
+                # Suppress repeated errors - filter will handle it
+                logger.debug(f"Error reading temperature sensor: {e}")
                 return None
         else:
             # Simulation mode - return realistic value
@@ -138,8 +141,8 @@ class TemperatureSensor(HardwareBase):
             
             # Step 2: Error Handling - Check for disconnected sensor
             if current_mA < DISCONNECT_THRESHOLD_MA:
-                if self._should_print_error("sensor_disconnected"):
-                    print(f"Warning: Temperature sensor appears disconnected. Current: {current_mA:.3f}mA (expected >= 4mA)")
+                # Suppress repeated errors - filter will handle it
+                logger.debug(f"Temperature sensor appears disconnected. Current: {current_mA:.3f}mA (expected >= 4mA)")
                 return None
             
             # Step 3: Calculate Temperature (°C)
@@ -153,7 +156,7 @@ class TemperatureSensor(HardwareBase):
             return temperature
             
         except (ZeroDivisionError, ValueError, TypeError) as e:
-            if self._should_print_error("calc_exception"):
-                print(f"Error calculating temperature from voltage: {e}")
+            # Suppress repeated errors - filter will handle it
+            logger.debug(f"Error calculating temperature from voltage: {e}")
             return None
 

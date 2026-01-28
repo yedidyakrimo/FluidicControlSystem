@@ -5,6 +5,9 @@ Keithley 2450 SMU (Source Measure Unit) control module
 import time
 from hardware.base import HardwareBase
 from hardware.smu.scpi_commands import SCPICommands
+from utils.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 # Try to import pyvisa
 PYVISA_AVAILABLE = False
@@ -18,20 +21,25 @@ try:
     try:
         rm_ni = pyvisa.ResourceManager()
         VISA_BACKEND = '@ni'
-        print("Using NI-VISA backend (recommended for USB devices)")
+        # Log at module level (before logger is available)
+        import logging
+        logging.getLogger('hardware.smu').info("Using NI-VISA backend (recommended for USB devices)")
         rm_ni.close()
     except:
         try:
             rm_py = pyvisa.ResourceManager('@py')
             VISA_BACKEND = '@py'
-            print("Using pyvisa-py backend (limited USB support)")
+            import logging
+            logging.getLogger('hardware.smu').info("Using pyvisa-py backend (limited USB support)")
             rm_py.close()
         except:
             VISA_BACKEND = None
-            print("Warning: VISA backend could not be initialized")
+            import logging
+            logging.getLogger('hardware.smu').warning("VISA backend could not be initialized")
 except ImportError:
     PYVISA_AVAILABLE = False
-    print("PyVISA not available. SMU will run in simulation mode.")
+    import logging
+    logging.getLogger('hardware.smu').warning("PyVISA not available. SMU will run in simulation mode.")
 
 
 class Keithley2450(HardwareBase):
@@ -69,25 +77,22 @@ class Keithley2450(HardwareBase):
             # Try default (NI-VISA) first
             try:
                 self.rm = pyvisa.ResourceManager()
-                print("Using default VISA backend (NI-VISA)")
+                logger.debug("Using default VISA backend (NI-VISA)")
             except Exception as e1:
                 # Try explicit @ni
                 try:
                     self.rm = pyvisa.ResourceManager('@ni')
-                    print("Using NI-VISA backend (@ni)")
+                    logger.debug("Using NI-VISA backend (@ni)")
                 except Exception as e2:
                     # Fallback to pyvisa-py
                     try:
                         self.rm = pyvisa.ResourceManager('@py')
-                        print("Using pyvisa-py backend (limited USB support)")
+                        logger.debug("Using pyvisa-py backend (limited USB support)")
                     except Exception as e3:
-                        print(f"Failed to initialize any VISA backend:")
-                        print(f"  Default: {e1}")
-                        print(f"  @ni: {e2}")
-                        print(f"  @py: {e3}")
+                        logger.error(f"Failed to initialize any VISA backend: Default={e1}, @ni={e2}, @py={e3}")
                         self.enable_simulation()
         except Exception as e:
-            print(f"Error initializing VISA ResourceManager: {e}")
+            logger.error(f"Error initializing VISA ResourceManager: {e}")
             self.enable_simulation()
     
     def connect(self):
@@ -108,29 +113,26 @@ class Keithley2450(HardwareBase):
             True if connected, False otherwise
         """
         if not self.rm:
-            print("VISA ResourceManager not initialized")
+            logger.warning("VISA ResourceManager not initialized")
             return False
         
         try:
-            print(f"Attempting to connect to: {resource}...")
+            logger.debug(f"Attempting to connect to: {resource}...")
             self.smu = self.rm.open_resource(resource)
             # Set timeout to 5000ms (5 seconds) to prevent hanging
             self.smu.timeout = 5000
-            print(f"Resource opened successfully")
+            logger.debug("Resource opened successfully")
             
             # Test connection
             idn = self.smu.query(self.scpi.identify())
-            print(f"\n✅ Connection Successful!")
-            print(f"Connected to Keithley 2450 SMU: {resource}")
-            print(f"Device ID: {idn.strip()}")
+            logger.info(f"Connected to Keithley 2450 SMU: {resource}")
+            logger.debug(f"Device ID: {idn.strip()}")
             
             self.connected = True
             self.simulation_mode = False
             return True
         except Exception as e:
-            print(f"❌ Error connecting to specified SMU resource {resource}: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error connecting to specified SMU resource {resource}: {e}")
             self.enable_simulation()
             return False
     
@@ -142,26 +144,26 @@ class Keithley2450(HardwareBase):
             True if found and connected, False otherwise
         """
         if not self.rm:
-            print("VISA ResourceManager not initialized")
+            logger.warning("VISA ResourceManager not initialized")
             self.enable_simulation()
             return False
         
         try:
             resources = self.rm.list_resources()
-            print(f"Found {len(resources)} VISA resource(s):")
+            logger.debug(f"Found {len(resources)} VISA resource(s)")
             
             for resource in resources:
-                print(f"  - {resource}")
+                logger.debug(f"Checking resource: {resource}")
                 try:
                     inst = self.rm.open_resource(resource)
                     # Set timeout to 2000ms (2 seconds) for device detection
                     inst.timeout = 2000
                     idn = inst.query(self.scpi.identify())
-                    print(f"    IDN: {idn.strip()}")
+                    logger.debug(f"  IDN: {idn.strip()}")
                     
                     # Check if it's a Keithley 2450
                     if "2450" in idn.upper() or "KEITHLEY" in idn.upper():
-                        print(f"    ✓ Found Keithley 2450 SMU at {resource}")
+                        logger.info(f"Found Keithley 2450 SMU at {resource}")
                         self.smu = inst
                         # Set timeout to 5000ms (5 seconds) for normal operations
                         self.smu.timeout = 5000
@@ -172,15 +174,15 @@ class Keithley2450(HardwareBase):
                     else:
                         inst.close()
                 except Exception as e:
-                    print(f"    Could not query {resource}: {e}")
+                    logger.debug(f"Could not query {resource}: {e}")
                     continue
             
-            print("No Keithley 2450 SMU found in available resources.")
+            logger.warning("No Keithley 2450 SMU found in available resources.")
             self.enable_simulation()
             return False
             
         except Exception as e:
-            print(f"Error during SMU auto-detection: {e}")
+            logger.error(f"Error during SMU auto-detection: {e}")
             self.enable_simulation()
             return False
     
@@ -209,7 +211,7 @@ class Keithley2450(HardwareBase):
             resources = self.rm.list_resources()
             return list(resources)
         except Exception as e:
-            print(f"Error listing VISA resources: {e}")
+            logger.error(f"Error listing VISA resources: {e}")
             return []
     
     def get_info(self):
@@ -237,7 +239,7 @@ class Keithley2450(HardwareBase):
         except Exception as e:
             # Timeout or communication error - device is not responsive
             error_msg = str(e)
-            print(f"SMU health check failed: {error_msg}")
+            logger.warning(f"SMU health check failed: {error_msg}")
             
             # Close the connection explicitly
             try:
@@ -272,49 +274,47 @@ class Keithley2450(HardwareBase):
             True if successful, False otherwise
         """
         if not self.smu:
-            print("SMU not connected.")
+            logger.warning("SMU not connected - operation skipped")
             return False
         
         try:
             # 1. Configure Source: Voltage
-            print("Sending: SOUR:FUNC VOLT")
+            logger.debug("Sending: SOUR:FUNC VOLT")
             self.smu.write(self.scpi.set_source_voltage())
             
             # Enable Auto Range for Source
-            print("Sending: SOUR:VOLT:RANG:AUTO ON")
+            logger.debug("Sending: SOUR:VOLT:RANG:AUTO ON")
             self.smu.write(self.scpi.set_voltage_range_auto())
             
             # 2. Configure Measure: Current
-            print('Sending: SENS:FUNC "CURR"')
+            logger.debug('Sending: SENS:FUNC "CURR"')
             self.smu.write(self.scpi.set_sense_current())
             
             # Enable Auto Range for Measure
-            print("Sending: SENS:CURR:RANG:AUTO ON")
+            logger.debug("Sending: SENS:CURR:RANG:AUTO ON")
             self.smu.write(self.scpi.set_current_measurement_range_auto())
             
             # 3. Set Compliance (Current Limit)
-            print(f'Sending: SOUR:VOLT:ILIM {current_limit}')
+            logger.debug(f'Sending: SOUR:VOLT:ILIM {current_limit}')
             self.smu.write(self.scpi.set_current_limit(current_limit))
             
             # 4. Set Speed (NPLC 1 is standard for good speed/accuracy balance)
-            print('Sending: SENS:CURR:NPLC 1')
+            logger.debug('Sending: SENS:CURR:NPLC 1')
             self.smu.write(self.scpi.set_nplc(1))
             
             # 5. Turn Output On
-            print("Sending: OUTP ON")
+            logger.debug("Sending: OUTP ON")
             self.smu.write(self.scpi.output_on())
             
             # NOTE: Display command is NOT sent here - it will be sent in set_voltage()
             # after the bias value is set, so the device knows what the fixed value is
             # and can display correctly (Current large on top, Voltage small on bottom)
             
-            print("SMU Setup Complete: Source V, Measure I")
+            logger.info("SMU Setup Complete: Source V, Measure I")
             return True
             
         except Exception as e:
-            print(f"Error setting up SMU: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error setting up SMU: {e}", exc_info=True)
             return False
     
     def setup_iv_sweep(self, start_v, end_v, step_v, current_limit=0.1):
@@ -328,17 +328,17 @@ class Keithley2450(HardwareBase):
             current_limit: Current limit (A)
         """
         if not self.smu:
-            print(f"SMU not connected. Simulating I-V setup: {start_v}V to {end_v}V, step {step_v}V")
+            logger.warning(f"SMU not connected. Simulating I-V setup: {start_v}V to {end_v}V, step {step_v}V")
             return
         
         try:
             # Reset SMU
-            print("Sending: *RST")
+            logger.debug("Sending: *RST")
             self.smu.write(self.scpi.reset())
             time.sleep(0.5)
             
             # Configure source function to voltage
-            print("Sending: SOUR:FUNC VOLT")
+            logger.debug("Sending: SOUR:FUNC VOLT")
             self.smu.write(self.scpi.set_source_voltage())
             
             # Set voltage range
@@ -356,36 +356,34 @@ class Keithley2450(HardwareBase):
             else:
                 voltage_range = 200.0
             
-            print(f"Sending: SOUR:VOLT:RANG {voltage_range} (max voltage: {max_voltage}V)")
+            logger.debug(f"Sending: SOUR:VOLT:RANG {voltage_range} (max voltage: {max_voltage}V)")
             self.smu.write(self.scpi.set_voltage_range(voltage_range))
             
             # Set current limit
-            print(f"Sending: SOUR:VOLT:ILIM {current_limit}")
+            logger.debug(f"Sending: SOUR:VOLT:ILIM {current_limit}")
             self.smu.write(self.scpi.set_current_limit(current_limit))
             
             # Configure measurement function to current
-            print('Sending: SENS:FUNC "CURR"')
+            logger.debug('Sending: SENS:FUNC "CURR"')
             self.smu.write(self.scpi.set_sense_current())
             
             # Set current range
-            print(f"Sending: SENS:CURR:RANG {current_limit}")
+            logger.debug(f"Sending: SENS:CURR:RANG {current_limit}")
             self.smu.write(self.scpi.set_current_range(current_limit))
             
             # Set NPLC
-            print("Sending: SENS:CURR:NPLC 1")
+            logger.debug("Sending: SENS:CURR:NPLC 1")
             self.smu.write(self.scpi.set_nplc(1))
             
             # Set aperture time
-            print("Sending: SENS:CURR:APER 0.1")
+            logger.debug("Sending: SENS:CURR:APER 0.1")
             self.smu.write(self.scpi.set_aperture_time(0.1))
             
-            print(f"SMU configured for manual I-V sweep: {start_v}V to {end_v}V, step {step_v}V")
-            print("Note: Using manual sweep (not built-in sweep mode) to avoid trigger model issues")
+            logger.info(f"SMU configured for manual I-V sweep: {start_v}V to {end_v}V, step {step_v}V")
+            logger.debug("Note: Using manual sweep (not built-in sweep mode) to avoid trigger model issues")
             
         except Exception as e:
-            print(f"Error configuring SMU: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error configuring SMU: {e}", exc_info=True)
     
     def set_voltage(self, voltage):
         """
@@ -398,25 +396,25 @@ class Keithley2450(HardwareBase):
             True if successful, False otherwise
         """
         if not self.smu:
-            print("SMU not connected. Cannot set voltage.")
+            logger.warning("SMU not connected - cannot set voltage")
             return False
         
         try:
             # Set voltage value (bias)
-            print(f"Sending: SOUR:VOLT {voltage}")
+            logger.debug(f"Sending: SOUR:VOLT {voltage}")
             self.smu.write(self.scpi.set_voltage(voltage))
             time.sleep(0.2)  # Wait for voltage to stabilize
             
             # Send display command AFTER setting bias value
             # This ensures the device knows what the fixed value (voltage) is
             # and what the measured value (current) is, so it can display correctly
-            print("Sending: DISPlay:SCReen HOME (after setting voltage bias)")
+            logger.debug("Sending: DISPlay:SCReen HOME (after setting voltage bias)")
             self.smu.write(self.scpi.set_display_home())
             time.sleep(0.2)  # Wait for display to update
             
             return True
         except Exception as e:
-            print(f"Error setting SMU voltage: {e}")
+            logger.error(f"Error setting SMU voltage: {e}")
             return False
     
     def setup_for_current_source_measurement(self, voltage_limit=20.0, current_range=None):
@@ -435,48 +433,46 @@ class Keithley2450(HardwareBase):
             True if successful, False otherwise
         """
         if not self.smu:
-            print("SMU not connected.")
+            logger.warning("SMU not connected - operation skipped")
             return False
         
         try:
             # 0. Reset device to ensure clean state
-            print("Sending: *RST")
+            logger.debug("Sending: *RST")
             self.smu.write(self.scpi.reset())
             time.sleep(0.1)
             
             # 1. Configure Source: Current
-            print("Sending: SOUR:FUNC CURR")
+            logger.debug("Sending: SOUR:FUNC CURR")
             self.smu.write(self.scpi.set_source_current())
-            print("Sending: SOUR:CURR:RANG:AUTO ON")
+            logger.debug("Sending: SOUR:CURR:RANG:AUTO ON")
             self.smu.write(self.scpi.set_current_source_range_auto())
             
             # 2. Configure Measure: Voltage
-            print('Sending: SENS:FUNC "VOLT"')
+            logger.debug('Sending: SENS:FUNC "VOLT"')
             self.smu.write(self.scpi.set_sense_voltage())
-            print("Sending: SENS:VOLT:RANG:AUTO ON")
+            logger.debug("Sending: SENS:VOLT:RANG:AUTO ON")
             self.smu.write(self.scpi.set_voltage_measurement_range_auto())
             
             # 3. Set Compliance & Speed
-            print(f"Sending: SOUR:CURR:VLIM {voltage_limit}")
+            logger.debug(f"Sending: SOUR:CURR:VLIM {voltage_limit}")
             self.smu.write(self.scpi.set_voltage_limit(voltage_limit))
-            print('Sending: SENS:VOLT:NPLC 1')
+            logger.debug('Sending: SENS:VOLT:NPLC 1')
             self.smu.write(self.scpi.set_voltage_nplc(1))
             
             # 4. Turn Output On
-            print("Sending: OUTP ON")
+            logger.debug("Sending: OUTP ON")
             self.smu.write(self.scpi.output_on())
             
             # NOTE: Display command is NOT sent here - it will be sent in set_current()
             # after the bias value is set, so the device knows what the fixed value is
             # and can display correctly (Voltage large on top, Current small on bottom)
             
-            print("SMU Setup Complete: Source I, Measure V")
+            logger.info("SMU Setup Complete: Source I, Measure V")
             return True
             
         except Exception as e:
-            print(f"Error setting up SMU: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error setting up SMU: {e}", exc_info=True)
             return False
     
     def set_current(self, current):
@@ -490,25 +486,25 @@ class Keithley2450(HardwareBase):
             True if successful, False otherwise
         """
         if not self.smu:
-            print("SMU not connected. Cannot set current.")
+            logger.warning("SMU not connected - cannot set current")
             return False
         
         try:
             # Set current value (bias)
-            print(f"Sending: SOUR:CURR {current}")
+            logger.debug(f"Sending: SOUR:CURR {current}")
             self.smu.write(self.scpi.set_current(current))
             time.sleep(0.2)  # Wait for current to stabilize
             
             # Send display command AFTER setting bias value
             # This ensures the device knows what the fixed value (current) is
             # and what the measured value (voltage) is, so it can display correctly
-            print("Sending: DISPlay:SCReen HOME (after setting current bias)")
+            logger.debug("Sending: DISPlay:SCReen HOME (after setting current bias)")
             self.smu.write(self.scpi.set_display_home())
             time.sleep(0.2)  # Wait for display to update
             
             return True
         except Exception as e:
-            print(f"Error setting SMU current: {e}")
+            logger.error(f"Error setting SMU current: {e}")
             return False
     
     def measure(self, mode="voltage"):
@@ -548,7 +544,7 @@ class Keithley2450(HardwareBase):
                 try:
                     voltage = float(read_string)
                 except ValueError as e:
-                    print(f"Warning: Could not parse READ? voltage response: {read_string}, error: {e}")
+                    logger.warning(f"Could not parse READ? voltage response: {read_string}, error: {e}")
                     return None
                 
                 # Current is the programmed source current (setpoint)
@@ -556,7 +552,7 @@ class Keithley2450(HardwareBase):
                     i_str = self.smu.query(self.scpi.query_current()).strip()
                     current = float(i_str)
                 except Exception as e:
-                    print(f"Warning: Could not read programmed current (SOUR:CURR?): {e}")
+                    logger.warning(f"Could not read programmed current (SOUR:CURR?): {e}")
                     return None
                 
                 data["voltage"] = voltage
@@ -569,7 +565,7 @@ class Keithley2450(HardwareBase):
                 try:
                     current = float(read_string)
                 except ValueError as e:
-                    print(f"Warning: Could not parse READ? current response: {read_string}, error: {e}")
+                    logger.warning(f"Could not parse READ? current response: {read_string}, error: {e}")
                     return None
                 
                 # Voltage is the programmed source voltage (setpoint)
@@ -577,14 +573,14 @@ class Keithley2450(HardwareBase):
                     v_str = self.smu.query(self.scpi.query_voltage()).strip()
                     voltage = float(v_str)
                 except Exception as e:
-                    print(f"Warning: Could not read programmed voltage (SOUR:VOLT?): {e}")
+                    logger.warning(f"Could not read programmed voltage (SOUR:VOLT?): {e}")
                     return None
                 
                 data["voltage"] = voltage
                 data["current"] = current
             
             else:
-                print(f"Warning: Unknown measure mode '{mode}'. Expected 'voltage' or 'current'.")
+                logger.warning(f"Unknown measure mode '{mode}'. Expected 'voltage' or 'current'.")
                 return None
             
             # Refresh display to show updated measurement values in real-time
@@ -596,9 +592,7 @@ class Keithley2450(HardwareBase):
             
             return data
         except Exception as e:
-            print(f"Error measuring SMU: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error measuring SMU: {e}", exc_info=True)
             return None
     
     def read_data(self):
@@ -624,7 +618,7 @@ class Keithley2450(HardwareBase):
             state = self.smu.query(self.scpi.query_output_state())
             return "1" in state or "ON" in state.upper()
         except Exception as e:
-            print(f"Error reading SMU output state: {e}")
+            logger.warning(f"Error reading SMU output state: {e}")
             return False
     
     def stop(self):
@@ -633,9 +627,9 @@ class Keithley2450(HardwareBase):
             try:
                 self.smu.write(self.scpi.set_voltage(0))
                 self.smu.write(self.scpi.output_off())
-                print("SMU stopped")
+                logger.info("SMU stopped")
             except Exception as e:
-                print(f"Error stopping SMU: {e}")
+                logger.error(f"Error stopping SMU: {e}")
         else:
-            print("SMU not connected. Simulating stop.")
+            logger.debug("SMU not connected - simulating stop")
 

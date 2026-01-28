@@ -4,6 +4,9 @@ I-V experiment type
 
 import time
 from experiments.base_experiment import BaseExperiment
+from utils.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class IVExperiment(BaseExperiment):
@@ -19,7 +22,7 @@ class IVExperiment(BaseExperiment):
         """
         if not self.is_running:
             self.is_running = True
-            print("Starting I-V measurement...")
+            logger.info("Starting I-V measurement...")
         
         try:
             # Create new data file
@@ -64,8 +67,8 @@ class IVExperiment(BaseExperiment):
                 time.sleep(delay)  # Delay between measurements
         
         except Exception as e:
-            print(f"Error in I-V experiment: {e}")
+            logger.error(f"Error in I-V experiment: {e}", exc_info=True)
         finally:
             self.stop()
-            print("I-V measurement finished.")
+            logger.info("I-V measurement finished.")
 

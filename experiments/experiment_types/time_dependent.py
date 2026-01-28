@@ -5,6 +5,9 @@ Time-dependent experiment type
 import time
 from experiments.base_experiment import BaseExperiment
 from experiments.safety_checks import SafetyChecker
+from utils.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class TimeDependentExperiment(BaseExperiment):
@@ -25,7 +28,7 @@ class TimeDependentExperiment(BaseExperiment):
             - temp: Temperature (optional)
         """
         self.is_running = True
-        print("Starting time-dependent experiment...")
+        logger.info("Starting time-dependent experiment...")
         
         # Create new data file
         self.data_handler.create_new_file()
@@ -40,7 +43,7 @@ class TimeDependentExperiment(BaseExperiment):
             valve_setting = step.get('valve_setting', {})
             temperature = step.get('temp', None)
             
-            print(f"Executing step: Duration={duration}s, Flow Rate={flow_rate} ml/min")
+            logger.debug(f"Executing step: Duration={duration}s, Flow Rate={flow_rate} ml/min")
             
             # Set flow rate and valves
             self.hw_controller.set_pump_flow_rate(flow_rate)
@@ -87,5 +90,5 @@ class TimeDependentExperiment(BaseExperiment):
                 time.sleep(1)
         
         self.stop()
-        print("Time-dependent experiment finished.")
+        logger.info("Time-dependent experiment finished.")
 

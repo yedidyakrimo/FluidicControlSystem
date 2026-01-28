@@ -5,6 +5,9 @@ Pressure sensor (Ashcroft ZL92) control module
 import time
 import math
 from hardware.base import HardwareBase
+from utils.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class PressureSensor(HardwareBase):
@@ -70,7 +73,7 @@ class PressureSensor(HardwareBase):
                 pressure = voltage * 100  # Placeholder conversion
                 return pressure
             except Exception as e:
-                print(f"Error reading pressure sensor: {e}")
+                logger.debug(f"Error reading pressure sensor: {e}")
                 # Return simulated value on error
                 elapsed = time.time() - self.sim_start_time
                 base_pressure = 1.5

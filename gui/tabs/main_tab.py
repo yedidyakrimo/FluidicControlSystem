@@ -15,6 +15,9 @@ import numpy as np
 import queue
 
 from gui.tabs.base_tab import BaseTab
+from utils.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class MainTab(BaseTab):
@@ -290,6 +293,25 @@ class MainTab(BaseTab):
         self.valve_var = ctk.StringVar(value="main")
         ctk.CTkRadioButton(valve_frame, text="Main", variable=self.valve_var, value="main").pack(side='left', padx=5)
         ctk.CTkRadioButton(valve_frame, text="Rinsing", variable=self.valve_var, value="rinsing").pack(side='left', padx=5)
+        
+        # Step Progress Frame
+        step_progress_frame = ctk.CTkFrame(left_frame)
+        step_progress_frame.pack(fill='x', padx=10, pady=5)
+        
+        ctk.CTkLabel(step_progress_frame, text="Program Progress", 
+                     font=('Helvetica', 12, 'bold')).pack(pady=5)
+        
+        self.step_info_label = ctk.CTkLabel(step_progress_frame, text="Step: - / -", 
+                                           font=('Helvetica', 11))
+        self.step_info_label.pack(pady=2)
+        
+        self.step_time_label = ctk.CTkLabel(step_progress_frame, text="Time remaining: -", 
+                                           font=('Helvetica', 10))
+        self.step_time_label.pack(pady=2)
+        
+        self.step_progress_bar = ctk.CTkProgressBar(step_progress_frame, width=400)
+        self.step_progress_bar.pack(pady=5)
+        self.step_progress_bar.set(0)
         
         # Experiment Metadata (kept for functionality)
         metadata_frame = ctk.CTkFrame(left_frame)
@@ -842,15 +864,15 @@ class MainTab(BaseTab):
             else:
                 self.level_stats_label.configure(text='Mean: N/A | Std: N/A')
         except Exception as e:
-            print(f"Error updating statistics: {e}")
+            logger.debug(f"Error updating statistics: {e}")
     
     # --- Event Handlers ---
     def start_recording(self):
         """Start recording experiment - continues from last point if data exists"""
-        print("[MAIN_TAB] start_recording() called")
+        logger.debug("start_recording() called")
         try:
             file_name = self.exp_name_entry.get().strip()
-            print(f"[MAIN_TAB] Experiment name: {file_name}")
+            logger.debug(f"Experiment name: {file_name}")
             if not file_name:
                 messagebox.showerror('Error', 'Please enter an experiment name before starting recording.')
                 return
@@ -860,7 +882,7 @@ class MainTab(BaseTab):
                 return
             
             flow_rate = float(self.flow_rate_entry.get())
-            print(f"[MAIN_TAB] Flow rate: {flow_rate} ml/min")
+            logger.debug(f"Flow rate: {flow_rate} ml/min")
             
             # Validate flow rate range
             if flow_rate < 0:
@@ -933,20 +955,18 @@ class MainTab(BaseTab):
                     self.update_queue.put(('UPDATE_FILE', f"{file_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"))
                 self.update_queue.put(('UPDATE_READINGS', (0, 0, flow_rate, 0)))
             
-            print(f"[MAIN_TAB] Starting experiment thread with program: {experiment_program}")
-            print(f"[MAIN_TAB] Is new experiment: {is_new_experiment}")
+            logger.debug(f"Starting experiment thread with program: {experiment_program}")
+            logger.debug(f"Is new experiment: {is_new_experiment}")
             thread = threading.Thread(target=self.experiment_thread,
                              args=(experiment_program, is_new_experiment),
                              daemon=True)
             thread.start()
-            print(f"[MAIN_TAB] Thread started: {thread.is_alive()}")
+            logger.debug(f"Thread started: {thread.is_alive()}")
         except ValueError as e:
-            print(f"[MAIN_TAB ERROR] ValueError: {e}")
+            logger.warning(f"ValueError in start_recording: {e}")
             messagebox.showerror('Error', 'Invalid input for Flow Rate or Duration. Please enter numbers.')
         except Exception as e:
-            print(f"[MAIN_TAB ERROR] Unexpected error: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Unexpected error in start_recording: {e}", exc_info=True)
             messagebox.showerror('Error', f'Unexpected error: {e}')
     
     def stop_recording(self):
@@ -978,7 +998,7 @@ class MainTab(BaseTab):
         Returns:
             True if started successfully, False otherwise
         """
-        print("[MAIN_TAB] start_recording_from_program_tab() called")
+        logger.debug("start_recording_from_program_tab() called")
         
         # Validate experiment name (same as start_recording)
         file_name = self.exp_name_entry.get().strip()
@@ -1058,12 +1078,12 @@ class MainTab(BaseTab):
                 self.update_queue.put(('UPDATE_FILE', f"{file_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"))
         
         # Use existing experiment_thread() - no changes needed!
-        print(f"[MAIN_TAB] Starting experiment thread with program: {experiment_program}")
+        logger.debug(f"Starting experiment thread with program: {experiment_program}")
         thread = threading.Thread(target=self.experiment_thread,
                          args=(experiment_program, is_new_experiment),
                          daemon=True)
         thread.start()
-        print(f"[MAIN_TAB] Thread started: {thread.is_alive()}")
+        logger.debug(f"Thread started: {thread.is_alive()}")
         
         return True
     
@@ -1096,7 +1116,7 @@ class MainTab(BaseTab):
                         self.update_queue.put(('UPDATE_STATUS', 
                             'Experiment finished. CSV file closed. Excel conversion failed - check console.'))
             except Exception as e:
-                print(f"Error during automatic Excel conversion: {e}")
+                logger.warning(f"Error during automatic Excel conversion: {e}")
                 if self.update_queue:
                     self.update_queue.put(('UPDATE_STATUS', 
                         f'Experiment finished. CSV file closed. Excel conversion error: {e}'))
@@ -1109,6 +1129,22 @@ class MainTab(BaseTab):
         if self.update_queue:
             self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Completed', 'green')))
             self.update_queue.put(('UPDATE_FILE', 'No file - will create new file on next Start'))
+    
+    def update_step_progress(self, step_index, total_steps, step_remaining, step_progress):
+        """Update step progress widgets"""
+        if hasattr(self, 'step_info_label'):
+            self.step_info_label.configure(text=f"Step: {step_index} / {total_steps}")
+        
+        if hasattr(self, 'step_time_label'):
+            if step_remaining > 60:
+                mins = int(step_remaining // 60)
+                secs = int(step_remaining % 60)
+                self.step_time_label.configure(text=f"Time remaining: {mins}m {secs}s")
+            else:
+                self.step_time_label.configure(text=f"Time remaining: {int(step_remaining)}s")
+        
+        if hasattr(self, 'step_progress_bar'):
+            self.step_progress_bar.set(step_progress)
     
     def clear_graph(self):
         """Clear all graphs"""
@@ -1197,7 +1233,7 @@ class MainTab(BaseTab):
     
     def refresh_pump_status(self):
         """Refresh pump connection status (with threading)"""
-        print("DEBUG: Refresh pump button clicked")
+        logger.debug("Refresh pump button clicked")
         
         # 1. Update UI immediately (Main Thread)
         self.pump_status_label.configure(text="Scanning...", text_color='orange')
@@ -1211,18 +1247,18 @@ class MainTab(BaseTab):
             import time
             
             # Step 1: Check current status first (with health check)
-            print("[REFRESH] Checking current pump status...")
+            logger.debug("Checking current pump status...")
             pump_info = self.hw_controller.pump.get_info()
             
             # Step 2: If already connected and working, don't force reconnect
             if pump_info.get('connected', False) and not pump_info.get('simulation_mode', False):
-                print("[REFRESH] ✅ Pump already connected and responsive - no reconnection needed")
+                logger.debug("Pump already connected and responsive - no reconnection needed")
                 # Schedule UI update
                 self.after(0, lambda: self._update_pump_ui(pump_info))
                 return
             
             # Step 3: If not connected or in simulation mode, attempt force reconnection
-            print("[REFRESH] Pump not connected or in simulation mode - attempting FORCE reconnection...")
+            logger.debug("Pump not connected or in simulation mode - attempting FORCE reconnection...")
             
             if hasattr(self.hw_controller.pump, 'force_reconnect'):
                 reconnect_success = self.hw_controller.pump.force_reconnect()
@@ -1232,7 +1268,7 @@ class MainTab(BaseTab):
             
             # Step 4: Handle success and failure differently
             if reconnect_success:
-                print("[REFRESH] ✅ Pump force reconnection successful")
+                logger.info("Pump force reconnection successful")
                 # Give the pump more time to stabilize after reconnection
                 # Increased to 2.0 seconds to ensure hardware is fully ready
                 time.sleep(2.0)
@@ -1253,9 +1289,9 @@ class MainTab(BaseTab):
                     "status": "Connected",
                     "status_color": "green"
                 }
-                print("[REFRESH] Trusting force_reconnect result - marking as connected without health check")
+                logger.debug("Trusting force_reconnect result - marking as connected without health check")
             else:
-                print("[REFRESH] ❌ Pump force reconnection failed - staying in simulation mode")
+                logger.warning("Pump force reconnection failed - staying in simulation mode")
                 # Only call get_info() if reconnection failed to read actual error/disconnected state
                 pump_info = self.hw_controller.pump.get_info()
             
@@ -1263,7 +1299,7 @@ class MainTab(BaseTab):
             self.after(0, lambda: self._update_pump_ui(pump_info))
         except Exception as e:
             error_msg = str(e)
-            print(f"[REFRESH] Error during pump refresh: {error_msg}")
+            logger.warning(f"Error during pump refresh: {error_msg}")
             self.after(0, lambda: self._update_pump_error(error_msg))
     
     def _update_pump_ui(self, pump_info):
@@ -1284,17 +1320,17 @@ class MainTab(BaseTab):
             
             # Max flow rate is fixed at 5.0 ml/min (no need to display)
         except Exception as e:
-            print(f"Error updating pump UI: {e}")
+            logger.debug(f"Error updating pump UI: {e}")
             self.pump_status_label.configure(text='Error', text_color='red')
     
     def _update_pump_error(self, error_msg):
         """Update pump UI with error (called on main thread)"""
-        print(f"Error refreshing pump status: {error_msg}")
+        logger.warning(f"Error refreshing pump status: {error_msg}")
         self.pump_status_label.configure(text='Error', text_color='red')
     
     def refresh_keithley_status(self):
         """Refresh Keithley 2450 SMU connection status (with threading)"""
-        print("DEBUG: Refresh Keithley button clicked")
+        logger.debug("Refresh Keithley button clicked")
         
         # 1. Update UI immediately (Main Thread)
         self.keithley_status_label.configure(text="Scanning...", text_color='orange')
@@ -1312,7 +1348,7 @@ class MainTab(BaseTab):
                 
                 # Step C: If disconnected, attempt re-initialization (re-scan resources)
                 if not smu_info.get('connected', False):
-                    print("[REFRESH] SMU disconnected, attempting re-initialization...")
+                    logger.debug("SMU disconnected, attempting re-initialization...")
                     # Try to auto-detect and reconnect
                     detected_smu = self.hw_controller.auto_detect_smu()
                     if detected_smu:
@@ -1325,9 +1361,9 @@ class MainTab(BaseTab):
                         self.hw_controller.smu = detected_smu
                         # Re-check status after reconnection
                         smu_info = self.hw_controller.get_smu_info()
-                        print("[REFRESH] SMU reconnection successful")
+                        logger.info("SMU reconnection successful")
                     else:
-                        print("[REFRESH] SMU reconnection failed - device not found")
+                        logger.warning("SMU reconnection failed - device not found")
             else:
                 smu_info = {"connected": False, "info": "SMU not available"}
             
@@ -1345,12 +1381,12 @@ class MainTab(BaseTab):
             else:
                 self.keithley_status_label.configure(text='✗ Not Connected', text_color='red')
         except Exception as e:
-            print(f"Error updating Keithley UI: {e}")
+            logger.debug(f"Error updating Keithley UI: {e}")
             self.keithley_status_label.configure(text='Error', text_color='red')
     
     def _update_keithley_error(self, error_msg):
         """Update Keithley UI with error (called on main thread)"""
-        print(f"Error refreshing Keithley status: {error_msg}")
+        logger.warning(f"Error refreshing Keithley status: {error_msg}")
         self.keithley_status_label.configure(text='Error', text_color='red')
     
     def on_keithley_mode_change(self):
@@ -1413,7 +1449,7 @@ class MainTab(BaseTab):
                         f'Error while switching SMU mode to {mode}'
                     ))
         except Exception as e:
-            print(f"Error in on_keithley_mode_change safe reconfiguration: {e}")
+            logger.debug(f"Error in on_keithley_mode_change safe reconfiguration: {e}")
     
     def on_keithley_output_toggle(self):
         """Handle Keithley output enable/disable toggle"""
@@ -1428,7 +1464,7 @@ class MainTab(BaseTab):
                     if self.update_queue:
                         self.update_queue.put(('UPDATE_STATUS', 'SMU output turned OFF'))
             except Exception as e:
-                print(f"Error turning off SMU: {e}")
+                logger.warning(f"Error turning off SMU: {e}")
         else:
             # Setup and enable SMU output based on mode
             try:
@@ -1450,7 +1486,7 @@ class MainTab(BaseTab):
                     if self.update_queue:
                         self.update_queue.put(('UPDATE_STATUS', f'SMU output enabled: {bias_value} {"V" if mode == "voltage" else "A"}'))
             except (ValueError, Exception) as e:
-                print(f"Error enabling SMU: {e}")
+                logger.warning(f"Error enabling SMU: {e}")
                 self.keithley_output_var.set(False)
                 self.keithley_output_enabled = False
                 if self.update_queue:
@@ -1552,9 +1588,9 @@ class MainTab(BaseTab):
     
     def experiment_thread(self, experiment_program, is_new_experiment=True):
         """Run experiment in separate thread - continues from last point if resuming"""
-        print(f"[EXPERIMENT_THREAD] Starting experiment thread")
-        print(f"[EXPERIMENT_THREAD] Program: {experiment_program}")
-        print(f"[EXPERIMENT_THREAD] Is new experiment: {is_new_experiment}")
+        logger.debug(f"Starting experiment thread")
+        logger.debug(f"Program: {experiment_program}")
+        logger.debug(f"Is new experiment: {is_new_experiment}")
         self.exp_manager.is_running = True
         
         # Note: is_new_experiment is already determined in start_recording/start_recording_from_program_tab
@@ -1590,8 +1626,9 @@ class MainTab(BaseTab):
                             self.last_total_time = 0.0
         
         experiment_start_time = self.experiment_base_time
+        total_steps = len(experiment_program)
         
-        for step in experiment_program:
+        for step_index, step in enumerate(experiment_program, start=1):
             if not self.exp_manager.is_running:
                 break
             
@@ -1606,38 +1643,40 @@ class MainTab(BaseTab):
             temperature = step.get('temperature', None)
             valve_setting = step.get('valve_setting', {'valve1': True, 'valve2': False})
             
+            # Send step start notification
             if self.update_queue:
+                self.update_queue.put(('UPDATE_STEP_START', (step_index, total_steps, duration)))
                 temp_str = f", Temp={temperature}°C" if temperature else ""
                 measurement_mode_str = ""
                 if step.get('measurement_mode'):
                     mode_display = "Voltage" if step.get('measurement_mode') == 'voltage' else "Current"
                     measurement_mode_str = f", Mode={mode_display}"
                 self.update_queue.put(('UPDATE_STATUS', 
-                    f"Executing step: Duration={duration}s, Flow Rate={flow_rate} ml/min{temp_str}{measurement_mode_str}"))
+                    f"Executing step {step_index}/{total_steps}: Duration={duration}s, Flow Rate={flow_rate} ml/min{temp_str}{measurement_mode_str}"))
             
             # Set heating plate temperature if provided (optional, backward compatible)
             if temperature is not None:
                 try:
                     self.exp_manager.hw_controller.set_heating_plate_temp(temperature)
                 except Exception as e:
-                    print(f"[EXPERIMENT_THREAD] Warning: Could not set temperature: {e}")
+                    logger.warning(f"Could not set temperature: {e}")
             
             # Set pump flow rate and start the pump (with timeout handling)
-            print(f"[EXPERIMENT_THREAD] Setting pump flow rate to {flow_rate} ml/min")
+            logger.debug(f"Setting pump flow rate to {flow_rate} ml/min")
             try:
                 self.exp_manager.hw_controller.set_pump_flow_rate(flow_rate)
                 time.sleep(0.3)  # Wait for pump to process flow rate setting
-                print(f"[EXPERIMENT_THREAD] Starting pump...")
+                logger.debug("Starting pump...")
                 pump_started = self.exp_manager.hw_controller.start_pump()  # Start the pump
-                print(f"[EXPERIMENT_THREAD] Pump start result: {pump_started}")
+                logger.debug(f"Pump start result: {pump_started}")
                 time.sleep(0.5)  # Wait for pump to actually start running
-                print(f"[EXPERIMENT_THREAD] Setting valves...")
+                logger.debug("Setting valves...")
                 self.exp_manager.hw_controller.set_valves(valve_setting['valve1'], valve_setting['valve2'])
             except Exception as e:
                 # Catch SerialReadTimeoutException or any other timeout/communication error
                 error_msg = str(e)
                 error_type = type(e).__name__
-                print(f"[EXPERIMENT_THREAD] Pump timeout/error: {error_type}: {error_msg}")
+                logger.warning(f"Pump timeout/error: {error_type}: {error_msg}")
                 
                 # Mark pump as disconnected
                 if hasattr(self.exp_manager.hw_controller.pump, 'connected'):
@@ -1654,7 +1693,7 @@ class MainTab(BaseTab):
                 # Update UI to show pump disconnected
                 self.after(0, lambda: self.pump_status_label.configure(text='✗ Disconnected (Timeout)', text_color='red'))
                 
-                print("[EXPERIMENT_THREAD] Experiment stopped due to pump timeout")
+                logger.warning("Experiment stopped due to pump timeout")
                 return  # Exit the experiment thread
             
             # Setup Keithley 2450 if enabled
@@ -1670,42 +1709,51 @@ class MainTab(BaseTab):
                         self.after(0, lambda m=mode: self.keithley_mode_var.set(m))
                         # Update UI fields (show/hide appropriate limit fields)
                         self.after(0, self.on_keithley_mode_change)
-                        print(f"[EXPERIMENT_THREAD] Step specifies measurement_mode: {mode}")
+                        logger.debug(f"Step specifies measurement_mode: {mode}")
                     else:
                         # Fallback to UI setting (backward compatibility)
                         mode = self.keithley_mode_var.get()
-                        print(f"[EXPERIMENT_THREAD] Using measurement_mode from UI: {mode}")
+                        logger.debug(f"Using measurement_mode from UI: {mode}")
                     
                     bias_value = float(self.keithley_bias_entry.get())
                     
                     if mode == "voltage":
                         # Voltage mode = Source Current / Measure Voltage (למדוד מתח)
                         voltage_limit = float(self.keithley_voltage_limit_entry.get())
-                        print(f"[EXPERIMENT_THREAD] Setting up Keithley: Voltage mode (measure voltage), Bias={bias_value}A, Limit={voltage_limit}V")
+                        logger.debug(f"Setting up Keithley: Voltage mode (measure voltage), Bias={bias_value}A, Limit={voltage_limit}V")
                         self.hw_controller.setup_smu_for_current_source(voltage_limit)
                         self.hw_controller.set_smu_current(bias_value)
                     else:  # current mode
                         # Current mode = Source Voltage / Measure Current (למדוד זרם)
                         current_limit = float(self.keithley_current_limit_entry.get())
-                        print(f"[EXPERIMENT_THREAD] Setting up Keithley: Current mode (measure current), Bias={bias_value}V, Limit={current_limit}A")
+                        logger.debug(f"Setting up Keithley: Current mode (measure current), Bias={bias_value}V, Limit={current_limit}A")
                         self.hw_controller.setup_smu_for_iv_measurement(current_limit)
                         self.hw_controller.set_smu_voltage(bias_value, current_limit)
                     
-                    print(f"[EXPERIMENT_THREAD] Keithley 2450 configured and enabled")
+                    logger.debug("Keithley 2450 configured and enabled")
                 except (ValueError, Exception) as e:
-                    print(f"[EXPERIMENT_THREAD] Error setting up Keithley: {e}")
+                    logger.warning(f"Error setting up Keithley: {e}")
                     self.keithley_output_enabled = False
             
             start_time = time.time()
-            print(f"[EXPERIMENT_THREAD] Starting data collection loop...")
+            logger.debug("Starting data collection loop...")
             loop_count = 0
             
             while time.time() - start_time < duration and self.exp_manager.is_running:
                 loop_count += 1
-                if loop_count % 10 == 0:  # Print every 10 iterations
-                    print(f"[EXPERIMENT_THREAD] Loop iteration {loop_count}")
+                if loop_count % 10 == 0:  # Log every 10 iterations
+                    logger.debug(f"Loop iteration {loop_count}")
                 if not self.exp_manager.perform_safety_checks():
                     break
+                
+                # Calculate step progress and send update
+                step_elapsed = time.time() - start_time
+                step_remaining = max(0, duration - step_elapsed)
+                step_progress = min(1.0, step_elapsed / duration) if duration > 0 else 0.0
+                
+                if self.update_queue:
+                    self.update_queue.put(('UPDATE_STEP_PROGRESS', 
+                        (step_index, total_steps, step_remaining, step_progress)))
                 
                 # Check for flow rate updates (with timeout handling)
                 if self.current_flow_rate != flow_rate:
@@ -1719,7 +1767,7 @@ class MainTab(BaseTab):
                         # Catch timeout during flow rate update
                         error_msg = str(e)
                         error_type = type(e).__name__
-                        print(f"[EXPERIMENT_THREAD] Pump timeout during flow update: {error_type}: {error_msg}")
+                        logger.warning(f"Pump timeout during flow update: {error_type}: {error_msg}")
                         
                         # Mark pump as disconnected
                         if hasattr(self.exp_manager.hw_controller.pump, 'connected'):
@@ -1736,7 +1784,7 @@ class MainTab(BaseTab):
                         # Update UI to show pump disconnected
                         self.after(0, lambda: self.pump_status_label.configure(text='✗ Disconnected (Timeout)', text_color='red'))
                         
-                        print("[EXPERIMENT_THREAD] Experiment stopped due to pump timeout")
+                        logger.warning("Experiment stopped due to pump timeout")
                         break  # Exit the loop
                 
                 current_time = time.time()
@@ -1750,7 +1798,7 @@ class MainTab(BaseTab):
                     # Catch timeout when reading pump data
                     error_msg = str(e)
                     error_type = type(e).__name__
-                    print(f"[EXPERIMENT_THREAD] Pump timeout during data read: {error_type}: {error_msg}")
+                    logger.warning(f"Pump timeout during data read: {error_type}: {error_msg}")
                     
                     # Mark pump as disconnected
                     if hasattr(self.exp_manager.hw_controller.pump, 'connected'):
@@ -1767,7 +1815,7 @@ class MainTab(BaseTab):
                     # Update UI to show pump disconnected
                     self.after(0, lambda: self.pump_status_label.configure(text='✗ Disconnected (Timeout)', text_color='red'))
                     
-                    print("[EXPERIMENT_THREAD] Experiment stopped due to pump timeout")
+                    logger.warning("Experiment stopped due to pump timeout")
                     break  # Exit the loop
                 
                 pressure = self.exp_manager.hw_controller.read_pressure_sensor()
@@ -1798,7 +1846,7 @@ class MainTab(BaseTab):
                             if keithley_current is not None:
                                 self.keithley_current_label.configure(text=f'{keithley_current:.6f} A')
                     except Exception as e:
-                        print(f"[EXPERIMENT_THREAD] Error reading Keithley: {e}")
+                        logger.debug(f"Error reading Keithley: {e}")
                 
                 if self.update_queue:
                     status_msg = f"Running: {remaining_time:.0f}s remaining, Flow={flow_rate}ml/min"
@@ -1876,13 +1924,17 @@ class MainTab(BaseTab):
                         self.update_queue.put(('UPDATE_GRAPH2', (pressure_x_copy, pressure_y_copy)))
                         self.update_queue.put(('UPDATE_GRAPH3', (temp_x_copy, temp_y_copy)))
                         self.update_queue.put(('UPDATE_GRAPH4', (level_x_copy, level_y_copy)))
-                        if loop_count == 1:  # Print on first iteration
-                            print(f"[EXPERIMENT_THREAD] Sent graph updates to queue")
-                            print(f"[EXPERIMENT_THREAD] Flow data: {len(flow_x_copy)} points")
-                            print(f"[EXPERIMENT_THREAD] Pressure data: {len(pressure_x_copy)} points")
+                        if loop_count == 1:  # Log on first iteration
+                            logger.debug(f"Sent graph updates to queue")
+                            logger.debug(f"Flow data: {len(flow_x_copy)} points")
+                            logger.debug(f"Pressure data: {len(pressure_x_copy)} points")
                     except Exception as e:
-                        print(f"[EXPERIMENT_THREAD ERROR] Error updating graphs: {e}")
+                        logger.warning(f"Error updating graphs: {e}")
                 time.sleep(1)
+            
+            # Send step complete notification
+            if self.update_queue:
+                self.update_queue.put(('UPDATE_STEP_COMPLETE', (step_index, total_steps)))
         
         # Stop the pump when experiment ends
         self.exp_manager.hw_controller.stop_pump()
@@ -1891,9 +1943,9 @@ class MainTab(BaseTab):
         if self.keithley_output_enabled and self.hw_controller.smu is not None:
             try:
                 self.hw_controller.stop_smu()
-                print(f"[EXPERIMENT_THREAD] Keithley stopped")
+                logger.debug("Keithley stopped")
             except Exception as e:
-                print(f"[EXPERIMENT_THREAD] Error stopping Keithley: {e}")
+                logger.warning(f"Error stopping Keithley: {e}")
         
         self.exp_manager.stop_experiment()
         
