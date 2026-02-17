@@ -18,7 +18,7 @@ DEFAULT_VOLTAGE_RANGE = 10.0  # V
 DEFAULT_STEP_SIZE = 0.1  # V
 
 # Data settings
-DATA_DIRECTORY = "data"
+DATA_DIRECTORY = r"G:\Shared drives\ECR-Power MAIN\data"
 CSV_DELIMITER = ","
 TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
 

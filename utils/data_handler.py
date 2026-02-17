@@ -24,8 +24,21 @@ class DataHandler:
 
         # Check if the data folder exists; if not, create it.
         if not os.path.exists(self.data_folder):
-            os.makedirs(self.data_folder)
-            logger.debug(f"Created data folder: {self.data_folder}")
+            try:
+                os.makedirs(self.data_folder)
+                logger.debug(f"Created data folder: {self.data_folder}")
+            except OSError as e:
+                if self.data_folder != "data":
+                    logger.warning(
+                        "Could not create data folder %s (%s). Using local 'data'.",
+                        self.data_folder, e
+                    )
+                    self.data_folder = "data"
+                    if not os.path.exists(self.data_folder):
+                        os.makedirs(self.data_folder)
+                    logger.debug("Created fallback data folder: data")
+                else:
+                    raise
 
     def set_custom_filename(self, filename):
         """
@@ -83,8 +96,8 @@ class DataHandler:
             "program_step",
             "voltage",
             "current",
-            "target_voltage"
-            # We can add more fieldnames here for other sensors if needed.
+            "target_voltage",
+            "resistance",
         ])
 
         # Write the header row to the CSV file.

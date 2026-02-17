@@ -1919,11 +1919,15 @@ class MainTab(BaseTab):
                             temp_y_copy = list(self.temp_y_data)
                             level_x_copy = list(self.level_x_data)
                             level_y_copy = list(self.level_y_data)
+                            keithley_time_copy = list(self.keithley_time_data)
+                            keithley_voltage_copy = list(self.keithley_voltage_data)
+                            keithley_current_copy = list(self.keithley_current_data)
                         
                         self.update_queue.put(('UPDATE_GRAPH1', (flow_x_copy, flow_y_copy)))
                         self.update_queue.put(('UPDATE_GRAPH2', (pressure_x_copy, pressure_y_copy)))
                         self.update_queue.put(('UPDATE_GRAPH3', (temp_x_copy, temp_y_copy)))
                         self.update_queue.put(('UPDATE_GRAPH4', (level_x_copy, level_y_copy)))
+                        self.update_queue.put(('UPDATE_KEITHLEY_GRAPH', (keithley_time_copy, keithley_voltage_copy, keithley_current_copy)))
                         if loop_count == 1:  # Log on first iteration
                             logger.debug(f"Sent graph updates to queue")
                             logger.debug(f"Flow data: {len(flow_x_copy)} points")

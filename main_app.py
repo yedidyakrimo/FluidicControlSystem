@@ -5,6 +5,7 @@ from tkinter import filedialog, messagebox
 from hardware.hardware_controller import HardwareController
 from experiments.experiment_manager import ExperimentManager
 from utils.data_handler import DataHandler
+from config.settings import DATA_DIRECTORY
 import queue
 import logging
 
@@ -24,6 +25,7 @@ from gui.tabs.browser_tab import BrowserTab
 from gui.tabs.scheduler_tab import SchedulerTab
 from gui.tabs.iv_program_tab import IVProgramTab
 from gui.tabs.cv_tab import CVTab
+from gui.tabs.resistance_tab import ResistanceTab
 
 # Set appearance mode and color theme
 ctk.set_appearance_mode("dark")
@@ -55,7 +57,7 @@ class FluidicControlApp(ctk.CTk):
             mc_board_num=0,  # MCusb-1408FS-Plus board number (default 0)
             smu_resource=None  # Auto-detect Keithley 2450
         )
-        self.data_handler = DataHandler()
+        self.data_handler = DataHandler(data_folder=DATA_DIRECTORY)
         self.exp_manager = ExperimentManager(self.hw_controller, self.data_handler)
         
         # Create UI
@@ -157,9 +159,22 @@ class FluidicControlApp(ctk.CTk):
             self.update_queue
         )
         self.cv_tab_instance.pack(fill='both', expand=True)
+        
+        resistance_tab_frame = self.tabview.add("Resistance")
+        self.resistance_tab_instance = ResistanceTab(
+            resistance_tab_frame,
+            self.hw_controller,
+            self.data_handler,
+            self.exp_manager,
+            self.update_queue
+        )
+        self.resistance_tab_instance.pack(fill='both', expand=True)
     
     def check_update_queue(self):
-        """Check for thread-safe GUI updates and route to appropriate tabs"""
+        """Check for thread-safe GUI updates and route to appropriate tabs.
+        Handles UPDATE_GRAPH1-4 (Main + Resistance), UPDATE_RTAB_* (Resistance tab when
+        experiment runs from that tab), UPDATE_KEITHLEY_GRAPH (sync V/I/R to Resistance when
+        running from Main), IV, Program, and step progress updates."""
         if self.is_closing:
             return
         try:
@@ -224,6 +239,34 @@ class FluidicControlApp(ctk.CTk):
                             logger.debug("Graph update completed")
                         except Exception as e:
                             logger.error("Error updating graphs: %s", e, exc_info=True)
+                    
+                    # Resistance tab graph updates (same data as Main tab)
+                    if hasattr(self, 'resistance_tab_instance') and self.resistance_tab_instance is not None:
+                        try:
+                            x, y = data
+                            with self.resistance_tab_instance.data_lock:
+                                if update_type == 'UPDATE_GRAPH1':
+                                    self.resistance_tab_instance.flow_x_data = list(x) if x else []
+                                    self.resistance_tab_instance.flow_y_data = list(y) if y else []
+                                elif update_type == 'UPDATE_GRAPH2':
+                                    self.resistance_tab_instance.pressure_x_data = list(x) if x else []
+                                    self.resistance_tab_instance.pressure_y_data = list(y) if y else []
+                                elif update_type == 'UPDATE_GRAPH3':
+                                    self.resistance_tab_instance.temp_x_data = list(x) if x else []
+                                    self.resistance_tab_instance.temp_y_data = list(y) if y else []
+                                elif update_type == 'UPDATE_GRAPH4':
+                                    self.resistance_tab_instance.level_x_data = list(x) if x else []
+                                    self.resistance_tab_instance.level_y_data = list(y) if y else []
+                            graph_mode = self.resistance_tab_instance.graph_mode_var.get()
+                            if graph_mode == "multi":
+                                self.resistance_tab_instance.update_multi_panel_graphs()
+                            else:
+                                x_axis_type = self.resistance_tab_instance.x_axis_combo.get()
+                                y_axis_type = self.resistance_tab_instance.y_axis_combo.get()
+                                self.resistance_tab_instance.plot_xy_graph(x_axis_type, y_axis_type, [], [])
+                            self.resistance_tab_instance.update_statistics()
+                        except Exception as e:
+                            logger.error("Error updating Resistance tab graphs: %s", e, exc_info=True)
                 
                 elif update_type in ['UPDATE_IV_GRAPH', 'UPDATE_IV_STATUS', 'UPDATE_IV_FILE', 
                                      'UPDATE_IV_STATUS_BAR', 'UPDATE_IV_TIME_GRAPH']:
@@ -292,6 +335,31 @@ class FluidicControlApp(ctk.CTk):
                                 self.main_tab_instance.level_label.configure(text=f"{level:.2f} %", text_color='green')
                             else:
                                 self.main_tab_instance.level_label.configure(text="N/A", text_color='red')
+                    
+                    # Resistance tab status updates
+                    if hasattr(self, 'resistance_tab_instance') and self.resistance_tab_instance is not None:
+                        if update_type == 'UPDATE_STATUS':
+                            self.resistance_tab_instance.status_bar.configure(text=data)
+                        elif update_type == 'UPDATE_RECORDING_STATUS':
+                            text, color = data
+                            self.resistance_tab_instance.recording_status_label.configure(text=text, text_color=color)
+                        elif update_type == 'UPDATE_FILE':
+                            self.resistance_tab_instance.current_file_label.configure(text=data)
+                        elif update_type == 'UPDATE_READINGS':
+                            pressure, temp, flow, level = data
+                            if pressure is not None:
+                                self.resistance_tab_instance.pressure_label.configure(text=f"{pressure:.2f} bar", text_color='green')
+                            else:
+                                self.resistance_tab_instance.pressure_label.configure(text="N/A", text_color='red')
+                            if temp is not None:
+                                self.resistance_tab_instance.temp_label.configure(text=f"{temp:.2f} °C", text_color='green')
+                            else:
+                                self.resistance_tab_instance.temp_label.configure(text="---", text_color='red')
+                            self.resistance_tab_instance.flow_label.configure(text=f"{flow:.2f} ml/min")
+                            if level is not None:
+                                self.resistance_tab_instance.level_label.configure(text=f"{level:.2f} %", text_color='green')
+                            else:
+                                self.resistance_tab_instance.level_label.configure(text="N/A", text_color='red')
                 
                 elif update_type == 'UPDATE_PROGRAM_STATUS':
                     # Program tab status updates
@@ -321,6 +389,131 @@ class FluidicControlApp(ctk.CTk):
                         elif update_type == 'UPDATE_STEP_COMPLETE':
                             step_index, total_steps = data
                             self.program_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0)
+                    
+                    # Resistance tab step progress
+                    if hasattr(self, 'resistance_tab_instance') and self.resistance_tab_instance is not None:
+                        if update_type == 'UPDATE_STEP_START':
+                            step_index, total_steps, duration = data
+                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, duration, 0.0)
+                        elif update_type == 'UPDATE_STEP_PROGRESS':
+                            step_index, total_steps, step_remaining, step_progress = data
+                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, step_remaining, step_progress)
+                        elif update_type == 'UPDATE_STEP_COMPLETE':
+                            step_index, total_steps = data
+                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0)
+                
+                # Resistance tab updates (UPDATE_RTAB_* sent when experiment runs from Resistance tab)
+                elif update_type in ['UPDATE_RTAB_GRAPH1', 'UPDATE_RTAB_GRAPH2', 'UPDATE_RTAB_GRAPH3', 'UPDATE_RTAB_GRAPH4']:
+                    if hasattr(self, 'resistance_tab_instance') and self.resistance_tab_instance is not None:
+                        try:
+                            x, y = data
+                            with self.resistance_tab_instance.data_lock:
+                                if update_type == 'UPDATE_RTAB_GRAPH1':
+                                    self.resistance_tab_instance.flow_x_data = list(x) if x else []
+                                    self.resistance_tab_instance.flow_y_data = list(y) if y else []
+                                elif update_type == 'UPDATE_RTAB_GRAPH2':
+                                    self.resistance_tab_instance.pressure_x_data = list(x) if x else []
+                                    self.resistance_tab_instance.pressure_y_data = list(y) if y else []
+                                elif update_type == 'UPDATE_RTAB_GRAPH3':
+                                    self.resistance_tab_instance.temp_x_data = list(x) if x else []
+                                    self.resistance_tab_instance.temp_y_data = list(y) if y else []
+                                elif update_type == 'UPDATE_RTAB_GRAPH4':
+                                    self.resistance_tab_instance.level_x_data = list(x) if x else []
+                                    self.resistance_tab_instance.level_y_data = list(y) if y else []
+                            graph_mode = self.resistance_tab_instance.graph_mode_var.get()
+                            if graph_mode == "multi":
+                                self.resistance_tab_instance.update_multi_panel_graphs()
+                            else:
+                                x_axis_type = self.resistance_tab_instance.x_axis_combo.get()
+                                y_axis_type = self.resistance_tab_instance.y_axis_combo.get()
+                                self.resistance_tab_instance.plot_xy_graph(x_axis_type, y_axis_type, [], [])
+                            self.resistance_tab_instance.update_statistics()
+                        except Exception as e:
+                            logger.error("Error updating Resistance tab RTAB graphs: %s", e, exc_info=True)
+                
+                elif update_type == 'UPDATE_RTAB_RESISTANCE':
+                    if hasattr(self, 'resistance_tab_instance') and self.resistance_tab_instance is not None:
+                        try:
+                            resistance_time_copy, resistance_y_copy = data
+                            with self.resistance_tab_instance.data_lock:
+                                self.resistance_tab_instance.resistance_time_data = list(resistance_time_copy) if resistance_time_copy else []
+                                self.resistance_tab_instance.resistance_y_data = list(resistance_y_copy) if resistance_y_copy else []
+                            self.resistance_tab_instance.update_multi_panel_graphs()
+                            self.resistance_tab_instance.update_statistics()
+                        except Exception as e:
+                            logger.error("Error updating Resistance tab resistance graph: %s", e, exc_info=True)
+                
+                elif update_type == 'UPDATE_KEITHLEY_GRAPH':
+                    # Sync Voltage/Current/Resistance panels in Resistance tab when experiment runs from Main tab
+                    if hasattr(self, 'resistance_tab_instance') and self.resistance_tab_instance is not None:
+                        try:
+                            keithley_time_copy, keithley_voltage_copy, keithley_current_copy = data
+                            with self.resistance_tab_instance.data_lock:
+                                self.resistance_tab_instance.keithley_time_data = list(keithley_time_copy) if keithley_time_copy else []
+                                self.resistance_tab_instance.keithley_voltage_data = list(keithley_voltage_copy) if keithley_voltage_copy else []
+                                self.resistance_tab_instance.keithley_current_data = list(keithley_current_copy) if keithley_current_copy else []
+                                res_t = []
+                                res_y = []
+                                for i in range(min(len(keithley_time_copy or []), len(keithley_voltage_copy or []), len(keithley_current_copy or []))):
+                                    v = (keithley_voltage_copy or [])[i]
+                                    c = (keithley_current_copy or [])[i]
+                                    if c is not None and abs(c) > 1e-12:
+                                        res_t.append((keithley_time_copy or [])[i])
+                                        res_y.append(v / c)
+                                self.resistance_tab_instance.resistance_time_data = res_t
+                                self.resistance_tab_instance.resistance_y_data = res_y
+                            self.resistance_tab_instance.update_multi_panel_graphs()
+                            self.resistance_tab_instance.update_statistics()
+                        except Exception as e:
+                            logger.error("Error updating Resistance tab from UPDATE_KEITHLEY_GRAPH: %s", e, exc_info=True)
+                
+                elif update_type == 'UPDATE_RTAB_RESISTANCE_READINGS':
+                    if hasattr(self, 'resistance_tab_instance') and self.resistance_tab_instance is not None:
+                        try:
+                            if hasattr(self.resistance_tab_instance, 'resistance_bias_label'):
+                                bias_str, cur_str, r_str = data
+                                self.resistance_tab_instance.resistance_bias_label.configure(text=bias_str)
+                                self.resistance_tab_instance.resistance_current_label.configure(text=cur_str)
+                                self.resistance_tab_instance.resistance_r_label.configure(text=r_str)
+                        except Exception as e:
+                            logger.error("Error updating Resistance tab readings labels: %s", e, exc_info=True)
+                
+                elif update_type in ['UPDATE_RTAB_STATUS', 'UPDATE_RTAB_RECORDING_STATUS', 'UPDATE_RTAB_FILE', 'UPDATE_RTAB_READINGS']:
+                    if hasattr(self, 'resistance_tab_instance') and self.resistance_tab_instance is not None:
+                        if update_type == 'UPDATE_RTAB_STATUS':
+                            self.resistance_tab_instance.status_bar.configure(text=data)
+                        elif update_type == 'UPDATE_RTAB_RECORDING_STATUS':
+                            text, color = data
+                            self.resistance_tab_instance.recording_status_label.configure(text=text, text_color=color)
+                        elif update_type == 'UPDATE_RTAB_FILE':
+                            self.resistance_tab_instance.current_file_label.configure(text=data)
+                        elif update_type == 'UPDATE_RTAB_READINGS':
+                            pressure, temp, flow, level = data
+                            if pressure is not None:
+                                self.resistance_tab_instance.pressure_label.configure(text=f"{pressure:.2f} bar", text_color='green')
+                            else:
+                                self.resistance_tab_instance.pressure_label.configure(text="N/A", text_color='red')
+                            if temp is not None:
+                                self.resistance_tab_instance.temp_label.configure(text=f"{temp:.2f} °C", text_color='green')
+                            else:
+                                self.resistance_tab_instance.temp_label.configure(text="---", text_color='red')
+                            self.resistance_tab_instance.flow_label.configure(text=f"{flow:.2f} ml/min")
+                            if level is not None:
+                                self.resistance_tab_instance.level_label.configure(text=f"{level:.2f} %", text_color='green')
+                            else:
+                                self.resistance_tab_instance.level_label.configure(text="N/A", text_color='red')
+                
+                elif update_type in ['UPDATE_RTAB_STEP_START', 'UPDATE_RTAB_STEP_PROGRESS', 'UPDATE_RTAB_STEP_COMPLETE']:
+                    if hasattr(self, 'resistance_tab_instance') and self.resistance_tab_instance is not None:
+                        if update_type == 'UPDATE_RTAB_STEP_START':
+                            step_index, total_steps, duration = data
+                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, duration, 0.0)
+                        elif update_type == 'UPDATE_RTAB_STEP_PROGRESS':
+                            step_index, total_steps, step_remaining, step_progress = data
+                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, step_remaining, step_progress)
+                        elif update_type == 'UPDATE_RTAB_STEP_COMPLETE':
+                            step_index, total_steps = data
+                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0)
                         
         except queue.Empty:
             pass
@@ -450,6 +643,8 @@ class FluidicControlApp(ctk.CTk):
                 self.scheduler_tab_instance.cleanup()
             if hasattr(self, 'cv_tab_instance'):
                 self.cv_tab_instance.cleanup()
+            if hasattr(self, 'resistance_tab_instance'):
+                self.resistance_tab_instance.cleanup()
         except Exception as e:
             logger.warning(f"Error cleaning up tabs: {e}")
         
