@@ -105,7 +105,7 @@ class IVTab(BaseTab):
         flow_quick_frame.pack(fill='x', padx=5, pady=5)
         ctk.CTkLabel(flow_quick_frame, text='Quick Flow Rate (ml/min):', width=150).pack(side='left', padx=5)
         self.iv_flow_rate_entry = ctk.CTkEntry(flow_quick_frame, width=100)
-        self.iv_flow_rate_entry.insert(0, '1.5')
+        self.iv_flow_rate_entry.insert(0, '0.2')
         self.iv_flow_rate_entry.pack(side='left', padx=5)
         self.iv_update_flow_btn = self.create_blue_button(flow_quick_frame, text='Update Flow',
                                                           command=self.iv_update_flow, width=100)
@@ -219,7 +219,7 @@ class IVTab(BaseTab):
         
         ctk.CTkLabel(params_grid, text='Flow rate (ml/min):', width=120).grid(row=4, column=0, padx=5, pady=2)
         self.iv_flow_entry = ctk.CTkEntry(params_grid, width=150)
-        self.iv_flow_entry.insert(0, '1.5')
+        self.iv_flow_entry.insert(0, '0.2')
         self.iv_flow_entry.grid(row=4, column=1, padx=5, pady=2)
         ctk.CTkLabel(params_grid, text='(Max: 5.0)', width=80, font=('Helvetica', 9), text_color='gray').grid(row=4, column=2, padx=2, pady=2)
         
@@ -969,7 +969,7 @@ class IVTab(BaseTab):
             stop_val = float(self.iv_stop_entry.get()) if self.iv_stop_entry.get() else 2.0
             step_val = float(self.iv_step_entry.get()) if self.iv_step_entry.get() else 0.1
             time_val = float(self.iv_time_entry.get()) if self.iv_time_entry.get() else 1.0
-            flow_rate = float(self.iv_flow_entry.get()) if self.iv_flow_entry.get() else 1.5
+            flow_rate = float(self.iv_flow_entry.get()) if self.iv_flow_entry.get() else 0.2
             
             # Enforce maximum flow rate of 5.0 ml/min
             MAX_FLOW_RATE = 5.0
@@ -1082,14 +1082,14 @@ class IVTab(BaseTab):
         
         # Get flow rate from entry
         try:
-            flow_rate = float(self.iv_flow_entry.get()) if hasattr(self, 'iv_flow_entry') and self.iv_flow_entry.get() else 1.5
+            flow_rate = float(self.iv_flow_entry.get()) if hasattr(self, 'iv_flow_entry') and self.iv_flow_entry.get() else 0.2
             MAX_FLOW_RATE = 5.0
             if flow_rate > MAX_FLOW_RATE:
                 flow_rate = MAX_FLOW_RATE
             if flow_rate < 0:
-                flow_rate = 1.5
+                flow_rate = 0.2
         except:
-            flow_rate = 1.5
+            flow_rate = 0.2
         
         # Start pump automatically before measurement
         try:

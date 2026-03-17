@@ -55,8 +55,8 @@ class VapourtecPump(HardwareBase):
         
         # Simulation state variables
         self.sim_start_time = time.time()
-        self.pump_setpoint_flow = 1.5  # Default flow rate setpoint
-        self.previous_setpoint_flow = 1.5
+        self.pump_setpoint_flow = 0.2  # Default flow rate setpoint
+        self.previous_setpoint_flow = 0.2
         self.flow_change_time = time.time()
         self.is_running = False
         

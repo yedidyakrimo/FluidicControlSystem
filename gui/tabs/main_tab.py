@@ -29,7 +29,7 @@ class MainTab(BaseTab):
         super().__init__(parent, hw_controller, data_handler, exp_manager, update_queue)
         
         # Current flow rate
-        self.current_flow_rate = 1.5
+        self.current_flow_rate = 0.2
         
         # Track cumulative time for resume capability
         self.last_total_time = 0.0
@@ -157,7 +157,7 @@ class MainTab(BaseTab):
         flow_quick_frame.pack(fill='x', padx=5, pady=5)
         ctk.CTkLabel(flow_quick_frame, text='Quick Flow Rate (ml/min):', width=150).pack(side='left', padx=5)
         self.flow_rate_entry = ctk.CTkEntry(flow_quick_frame, width=100)
-        self.flow_rate_entry.insert(0, '1.5')
+        self.flow_rate_entry.insert(0, '0.2')
         self.flow_rate_entry.pack(side='left', padx=5)
         self.update_flow_btn = self.create_blue_button(flow_quick_frame, text='Update Flow',
                                                       command=self.update_flow, width=100)
@@ -305,9 +305,13 @@ class MainTab(BaseTab):
                                            font=('Helvetica', 11))
         self.step_info_label.pack(pady=2)
         
-        self.step_time_label = ctk.CTkLabel(step_progress_frame, text="Time remaining: -", 
+        self.step_time_label = ctk.CTkLabel(step_progress_frame, text="Time remaining (step): -", 
                                            font=('Helvetica', 10))
         self.step_time_label.pack(pady=2)
+        
+        self.step_total_time_label = ctk.CTkLabel(step_progress_frame, text="Time remaining (total): -", 
+                                                  font=('Helvetica', 10))
+        self.step_total_time_label.pack(pady=2)
         
         self.step_progress_bar = ctk.CTkProgressBar(step_progress_frame, width=400)
         self.step_progress_bar.pack(pady=5)
@@ -734,7 +738,7 @@ class MainTab(BaseTab):
             # Generate demo data - clean sine waves
             x_demo = np.linspace(0, 60, 200)
             if y_axis_type == 'Flow Rate':
-                y_demo = 1.5 + 0.3 * np.sin(2 * np.pi * x_demo / 20)
+                y_demo = 0.2 + 0.1 * np.sin(2 * np.pi * x_demo / 20)
             elif y_axis_type == 'Pressure':
                 y_demo = 10 + 2 * np.sin(2 * np.pi * x_demo / 15)
             elif y_axis_type == 'Temperature':
@@ -1129,19 +1133,28 @@ class MainTab(BaseTab):
         if self.update_queue:
             self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Completed', 'green')))
             self.update_queue.put(('UPDATE_FILE', 'No file - will create new file on next Start'))
+            # Notify Experiment Browser tab to refresh its experiment list
+            self.update_queue.put(('UPDATE_BROWSER_REFRESH', None))
     
-    def update_step_progress(self, step_index, total_steps, step_remaining, step_progress):
-        """Update step progress widgets"""
+    def _format_time_remaining(self, seconds):
+        """Format seconds as 'Xm Ys' or 'Xs'."""
+        if seconds is None or seconds < 0:
+            return "-"
+        s = int(round(seconds))
+        if s > 60:
+            return f"{s // 60}m {s % 60}s"
+        return f"{s}s"
+
+    def update_step_progress(self, step_index, total_steps, step_remaining, step_progress, total_remaining=None):
+        """Update step progress widgets. total_remaining = time left for entire program (step + all following)."""
         if hasattr(self, 'step_info_label'):
             self.step_info_label.configure(text=f"Step: {step_index} / {total_steps}")
         
         if hasattr(self, 'step_time_label'):
-            if step_remaining > 60:
-                mins = int(step_remaining // 60)
-                secs = int(step_remaining % 60)
-                self.step_time_label.configure(text=f"Time remaining: {mins}m {secs}s")
-            else:
-                self.step_time_label.configure(text=f"Time remaining: {int(step_remaining)}s")
+            self.step_time_label.configure(text=f"Time remaining (step): {self._format_time_remaining(step_remaining)}")
+        
+        if hasattr(self, 'step_total_time_label'):
+            self.step_total_time_label.configure(text=f"Time remaining (total): {self._format_time_remaining(total_remaining)}")
         
         if hasattr(self, 'step_progress_bar'):
             self.step_progress_bar.set(step_progress)
@@ -1643,9 +1656,10 @@ class MainTab(BaseTab):
             temperature = step.get('temperature', None)
             valve_setting = step.get('valve_setting', {'valve1': True, 'valve2': False})
             
-            # Send step start notification
+            # Send step start notification (with total time remaining for whole program)
+            total_remaining_at_start = duration + sum(s.get('duration', 0) for s in experiment_program[step_index:])
             if self.update_queue:
-                self.update_queue.put(('UPDATE_STEP_START', (step_index, total_steps, duration)))
+                self.update_queue.put(('UPDATE_STEP_START', (step_index, total_steps, duration, total_remaining_at_start)))
                 temp_str = f", Temp={temperature}°C" if temperature else ""
                 measurement_mode_str = ""
                 if step.get('measurement_mode'):
@@ -1715,7 +1729,12 @@ class MainTab(BaseTab):
                         mode = self.keithley_mode_var.get()
                         logger.debug(f"Using measurement_mode from UI: {mode}")
                     
-                    bias_value = float(self.keithley_bias_entry.get())
+                    # Use bias from program step if set: voltage mode → bias_current (A), current mode → bias_voltage (V)
+                    bias_from_step = step.get('bias_current') if mode == 'voltage' else step.get('bias_voltage')
+                    if bias_from_step is not None:
+                        bias_value = float(bias_from_step)
+                    else:
+                        bias_value = float(self.keithley_bias_entry.get())
                     
                     if mode == "voltage":
                         # Voltage mode = Source Current / Measure Voltage (למדוד מתח)
@@ -1750,10 +1769,11 @@ class MainTab(BaseTab):
                 step_elapsed = time.time() - start_time
                 step_remaining = max(0, duration - step_elapsed)
                 step_progress = min(1.0, step_elapsed / duration) if duration > 0 else 0.0
+                total_remaining = step_remaining + sum(s.get('duration', 0) for s in experiment_program[step_index:])
                 
                 if self.update_queue:
                     self.update_queue.put(('UPDATE_STEP_PROGRESS', 
-                        (step_index, total_steps, step_remaining, step_progress)))
+                        (step_index, total_steps, step_remaining, step_progress, total_remaining)))
                 
                 # Check for flow rate updates (with timeout handling)
                 if self.current_flow_rate != flow_rate:

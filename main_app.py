@@ -22,9 +22,10 @@ from gui.tabs.main_tab import MainTab
 from gui.tabs.iv_tab import IVTab
 from gui.tabs.program_tab import ProgramTab
 from gui.tabs.browser_tab import BrowserTab
-from gui.tabs.scheduler_tab import SchedulerTab
-from gui.tabs.iv_program_tab import IVProgramTab
-from gui.tabs.cv_tab import CVTab
+# Temporarily disabled tabs (uncomment to re-enable):
+# from gui.tabs.scheduler_tab import SchedulerTab
+# from gui.tabs.iv_program_tab import IVProgramTab
+# from gui.tabs.cv_tab import CVTab
 from gui.tabs.resistance_tab import ResistanceTab
 
 # Set appearance mode and color theme
@@ -116,7 +117,8 @@ class FluidicControlApp(ctk.CTk):
             self.data_handler, 
             self.exp_manager, 
             self.update_queue,
-            main_tab_ref=self.main_tab_instance  # Pass reference to MainTab for integration
+            main_tab_ref=self.main_tab_instance,
+            resistance_tab_ref=None  # Set below after Resistance tab is created
         )
         self.program_tab_instance.pack(fill='both', expand=True)
         
@@ -130,35 +132,16 @@ class FluidicControlApp(ctk.CTk):
         )
         self.browser_tab_instance.pack(fill='both', expand=True)
         
-        iv_program_tab_frame = self.tabview.add("Write Program IV")
-        self.iv_program_tab_instance = IVProgramTab(
-            iv_program_tab_frame,
-            self.hw_controller,
-            self.data_handler,
-            self.exp_manager,
-            self.update_queue
-        )
-        self.iv_program_tab_instance.pack(fill='both', expand=True)
-        
-        scheduler_tab_frame = self.tabview.add("Scheduler")
-        self.scheduler_tab_instance = SchedulerTab(
-            scheduler_tab_frame, 
-            self.hw_controller, 
-            self.data_handler, 
-            self.exp_manager, 
-            self.update_queue
-        )
-        self.scheduler_tab_instance.pack(fill='both', expand=True)
-        
-        cv_tab_frame = self.tabview.add("CV")
-        self.cv_tab_instance = CVTab(
-            cv_tab_frame,
-            self.hw_controller,
-            self.data_handler,
-            self.exp_manager,
-            self.update_queue
-        )
-        self.cv_tab_instance.pack(fill='both', expand=True)
+        # Temporarily disabled tabs (uncomment to re-enable):
+        # iv_program_tab_frame = self.tabview.add("Write Program IV")
+        # self.iv_program_tab_instance = IVProgramTab(...)
+        # self.iv_program_tab_instance.pack(fill='both', expand=True)
+        # scheduler_tab_frame = self.tabview.add("Scheduler")
+        # self.scheduler_tab_instance = SchedulerTab(...)
+        # self.scheduler_tab_instance.pack(fill='both', expand=True)
+        # cv_tab_frame = self.tabview.add("CV")
+        # self.cv_tab_instance = CVTab(...)
+        # self.cv_tab_instance.pack(fill='both', expand=True)
         
         resistance_tab_frame = self.tabview.add("Resistance")
         self.resistance_tab_instance = ResistanceTab(
@@ -169,6 +152,8 @@ class FluidicControlApp(ctk.CTk):
             self.update_queue
         )
         self.resistance_tab_instance.pack(fill='both', expand=True)
+        # Let Program tab run programs from Resistance tab as well
+        self.program_tab_instance.resistance_tab_ref = self.resistance_tab_instance
     
     def check_update_queue(self):
         """Check for thread-safe GUI updates and route to appropriate tabs.
@@ -366,41 +351,49 @@ class FluidicControlApp(ctk.CTk):
                     if hasattr(self, 'program_tab_instance'):
                         self.program_tab_instance.program_status_label.configure(text=data)
                 
+                elif update_type == 'UPDATE_BROWSER_REFRESH':
+                    # Refresh Experiment Browser tab when experiment finishes
+                    if hasattr(self, 'browser_tab_instance') and self.browser_tab_instance is not None:
+                        try:
+                            self.browser_tab_instance.refresh_experiments()
+                        except Exception as e:
+                            logger.error("Error refreshing Experiment Browser tab: %s", e, exc_info=True)
+                
                 elif update_type in ['UPDATE_STEP_START', 'UPDATE_STEP_PROGRESS', 'UPDATE_STEP_COMPLETE']:
                     # Step progress updates - update both Main Tab and Program Tab
                     if hasattr(self, 'main_tab_instance') and self.main_tab_instance is not None:
                         if update_type == 'UPDATE_STEP_START':
-                            step_index, total_steps, duration = data
-                            self.main_tab_instance.update_step_progress(step_index, total_steps, duration, 0.0)
+                            step_index, total_steps, duration, total_remaining = data
+                            self.main_tab_instance.update_step_progress(step_index, total_steps, duration, 0.0, total_remaining)
                         elif update_type == 'UPDATE_STEP_PROGRESS':
-                            step_index, total_steps, step_remaining, step_progress = data
-                            self.main_tab_instance.update_step_progress(step_index, total_steps, step_remaining, step_progress)
+                            step_index, total_steps, step_remaining, step_progress, total_remaining = data
+                            self.main_tab_instance.update_step_progress(step_index, total_steps, step_remaining, step_progress, total_remaining)
                         elif update_type == 'UPDATE_STEP_COMPLETE':
                             step_index, total_steps = data
-                            self.main_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0)
+                            self.main_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0, 0)
                     
                     if hasattr(self, 'program_tab_instance') and self.program_tab_instance is not None:
                         if update_type == 'UPDATE_STEP_START':
-                            step_index, total_steps, duration = data
-                            self.program_tab_instance.update_step_progress(step_index, total_steps, duration, 0.0)
+                            step_index, total_steps, duration, total_remaining = data
+                            self.program_tab_instance.update_step_progress(step_index, total_steps, duration, 0.0, total_remaining)
                         elif update_type == 'UPDATE_STEP_PROGRESS':
-                            step_index, total_steps, step_remaining, step_progress = data
-                            self.program_tab_instance.update_step_progress(step_index, total_steps, step_remaining, step_progress)
+                            step_index, total_steps, step_remaining, step_progress, total_remaining = data
+                            self.program_tab_instance.update_step_progress(step_index, total_steps, step_remaining, step_progress, total_remaining)
                         elif update_type == 'UPDATE_STEP_COMPLETE':
                             step_index, total_steps = data
-                            self.program_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0)
+                            self.program_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0, 0)
                     
                     # Resistance tab step progress
                     if hasattr(self, 'resistance_tab_instance') and self.resistance_tab_instance is not None:
                         if update_type == 'UPDATE_STEP_START':
-                            step_index, total_steps, duration = data
-                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, duration, 0.0)
+                            step_index, total_steps, duration, total_remaining = data
+                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, duration, 0.0, total_remaining)
                         elif update_type == 'UPDATE_STEP_PROGRESS':
-                            step_index, total_steps, step_remaining, step_progress = data
-                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, step_remaining, step_progress)
+                            step_index, total_steps, step_remaining, step_progress, total_remaining = data
+                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, step_remaining, step_progress, total_remaining)
                         elif update_type == 'UPDATE_STEP_COMPLETE':
                             step_index, total_steps = data
-                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0)
+                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0, 0)
                 
                 # Resistance tab updates (UPDATE_RTAB_* sent when experiment runs from Resistance tab)
                 elif update_type in ['UPDATE_RTAB_GRAPH1', 'UPDATE_RTAB_GRAPH2', 'UPDATE_RTAB_GRAPH3', 'UPDATE_RTAB_GRAPH4']:
@@ -506,14 +499,14 @@ class FluidicControlApp(ctk.CTk):
                 elif update_type in ['UPDATE_RTAB_STEP_START', 'UPDATE_RTAB_STEP_PROGRESS', 'UPDATE_RTAB_STEP_COMPLETE']:
                     if hasattr(self, 'resistance_tab_instance') and self.resistance_tab_instance is not None:
                         if update_type == 'UPDATE_RTAB_STEP_START':
-                            step_index, total_steps, duration = data
-                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, duration, 0.0)
+                            step_index, total_steps, duration, total_remaining = data
+                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, duration, 0.0, total_remaining)
                         elif update_type == 'UPDATE_RTAB_STEP_PROGRESS':
-                            step_index, total_steps, step_remaining, step_progress = data
-                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, step_remaining, step_progress)
+                            step_index, total_steps, step_remaining, step_progress, total_remaining = data
+                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, step_remaining, step_progress, total_remaining)
                         elif update_type == 'UPDATE_RTAB_STEP_COMPLETE':
                             step_index, total_steps = data
-                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0)
+                            self.resistance_tab_instance.update_step_progress(step_index, total_steps, 0, 1.0, 0)
                         
         except queue.Empty:
             pass

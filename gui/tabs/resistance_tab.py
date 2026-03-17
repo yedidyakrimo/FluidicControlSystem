@@ -333,7 +333,7 @@ class ResistanceTab(MainTab):
         else:
             x_demo = np.linspace(0, 60, 200)
             if y_axis_type == 'Flow Rate':
-                y_demo = 1.5 + 0.3 * np.sin(2 * np.pi * x_demo / 20)
+                y_demo = 0.2 + 0.1 * np.sin(2 * np.pi * x_demo / 20)
             elif y_axis_type == 'Pressure':
                 y_demo = 10 + 2 * np.sin(2 * np.pi * x_demo / 15)
             elif y_axis_type == 'Temperature':
@@ -548,8 +548,9 @@ class ResistanceTab(MainTab):
                 self.current_flow_rate = flow_rate
             temperature = step.get('temperature', None)
             valve_setting = step.get('valve_setting', {'valve1': True, 'valve2': False})
+            total_remaining_at_start = duration + sum(s.get('duration', 0) for s in experiment_program[step_index:])
             if self.update_queue:
-                self._rtab_put('UPDATE_STEP_START', (step_index, total_steps, duration))
+                self._rtab_put('UPDATE_STEP_START', (step_index, total_steps, duration, total_remaining_at_start))
                 temp_str = f", Temp={temperature}°C" if temperature else ""
                 mode_str = ""
                 if step.get('measurement_mode'):
@@ -585,7 +586,11 @@ class ResistanceTab(MainTab):
                         self.after(0, self.on_keithley_mode_change)
                     else:
                         mode = self.keithley_mode_var.get()
-                    bias_value = float(self.keithley_bias_entry.get())
+                    bias_from_step = step.get('bias_current') if mode == 'voltage' else step.get('bias_voltage')
+                    if bias_from_step is not None:
+                        bias_value = float(bias_from_step)
+                    else:
+                        bias_value = float(self.keithley_bias_entry.get())
                     if mode == "voltage":
                         voltage_limit = float(self.keithley_voltage_limit_entry.get())
                         self.hw_controller.setup_smu_for_current_source(voltage_limit)
@@ -606,8 +611,9 @@ class ResistanceTab(MainTab):
                 step_elapsed = time.time() - start_time
                 step_remaining = max(0, duration - step_elapsed)
                 step_progress = min(1.0, step_elapsed / duration) if duration > 0 else 0.0
+                total_remaining = step_remaining + sum(s.get('duration', 0) for s in experiment_program[step_index:])
                 if self.update_queue:
-                    self._rtab_put('UPDATE_STEP_PROGRESS', (step_index, total_steps, step_remaining, step_progress))
+                    self._rtab_put('UPDATE_STEP_PROGRESS', (step_index, total_steps, step_remaining, step_progress, total_remaining))
                 if self.current_flow_rate != flow_rate:
                     old_fr = flow_rate
                     flow_rate = self.current_flow_rate

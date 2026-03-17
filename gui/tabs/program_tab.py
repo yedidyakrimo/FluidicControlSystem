@@ -4,6 +4,7 @@ Program Tab - Write and run experiment programs
 
 import customtkinter as ctk
 from tkinter import messagebox, filedialog, ttk, simpledialog
+import re
 import threading
 import time
 import pandas as pd
@@ -16,12 +17,14 @@ class ProgramTab(BaseTab):
     Program tab for writing and running experiment programs
     """
     
-    def __init__(self, parent, hw_controller, data_handler, exp_manager, update_queue=None, main_tab_ref=None):
+    def __init__(self, parent, hw_controller, data_handler, exp_manager, update_queue=None, main_tab_ref=None, resistance_tab_ref=None):
         super().__init__(parent, hw_controller, data_handler, exp_manager, update_queue)
         self.main_tab_ref = main_tab_ref  # Reference to MainTab for integration
+        self.resistance_tab_ref = resistance_tab_ref  # Reference to ResistanceTab to run program from Resistance tab
+        self._last_run_via_resistance = False  # Track which tab started the program (for Stop)
         
         # Store table data
-        self.table_data = []  # List of dicts: [{'step': 1, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main'}, ...]
+        self.table_data = []  # List of dicts: [{'step': 1, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main'}, ...]
         
         # Create widgets
         self.create_widgets()
@@ -47,7 +50,7 @@ class ProgramTab(BaseTab):
         # Treeview table
         self.program_table = ttk.Treeview(
             table_container,
-            columns=('Step', 'Duration (s)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve'),
+            columns=('Step', 'Duration (s)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve', 'Bias Voltage (V)', 'Bias Current (A)'),
             show='headings',
             yscrollcommand=v_scrollbar.set,
             xscrollcommand=h_scrollbar.set,
@@ -64,12 +67,16 @@ class ProgramTab(BaseTab):
         self.program_table.heading('Flow Rate (ml/min)', text='Flow Rate (ml/min)')
         self.program_table.heading('Measurement Mode', text='Measurement Mode')
         self.program_table.heading('Valve', text='Valve')
+        self.program_table.heading('Bias Voltage (V)', text='Bias Voltage (V)')
+        self.program_table.heading('Bias Current (A)', text='Bias Current (A)')
         
         self.program_table.column('Step', width=60, anchor='center')
         self.program_table.column('Duration (s)', width=120, anchor='center')
         self.program_table.column('Flow Rate (ml/min)', width=150, anchor='center')
         self.program_table.column('Measurement Mode', width=180, anchor='center')
         self.program_table.column('Valve', width=100, anchor='center')
+        self.program_table.column('Bias Voltage (V)', width=110, anchor='center')
+        self.program_table.column('Bias Current (A)', width=110, anchor='center')
         
         self.program_table.pack(side='left', fill='both', expand=True)
         
@@ -91,11 +98,19 @@ class ProgramTab(BaseTab):
         control_frame.pack(fill='x', padx=10, pady=5)
         ctk.CTkLabel(control_frame, text="Program Control", font=('Helvetica', 14, 'bold')).pack(pady=5)
         
+        # Run / file name (used as experiment file name when running)
+        run_name_frame = ctk.CTkFrame(control_frame)
+        run_name_frame.pack(fill='x', padx=5, pady=(0, 5))
+        ctk.CTkLabel(run_name_frame, text='Run name (file name):', width=160).pack(side='left', padx=5)
+        self.run_name_entry = ctk.CTkEntry(run_name_frame, width=220, placeholder_text='Optional – otherwise use name from Main/Resistance tab')
+        self.run_name_entry.pack(side='left', padx=5)
+        
         control_btn_frame = ctk.CTkFrame(control_frame)
         control_btn_frame.pack(pady=5)
         self.create_blue_button(control_btn_frame, text='📂 Load from Excel', command=self.load_from_excel, width=140).pack(side='left', padx=5)
         self.create_blue_button(control_btn_frame, text='💾 Save to Excel', command=self.save_to_excel, width=140).pack(side='left', padx=5)
-        self.create_blue_button(control_btn_frame, text='▶️ Run Program', command=self.run_program, width=120).pack(side='left', padx=5)
+        self.create_blue_button(control_btn_frame, text='▶️ Run (Main)', command=self.run_program, width=110).pack(side='left', padx=5)
+        self.create_blue_button(control_btn_frame, text='▶️ Run (Resistance)', command=self.run_program_from_resistance_tab, width=140).pack(side='left', padx=5)
         self.create_blue_button(control_btn_frame, text='⏹️ Stop Program', command=self.stop_program, width=120,
                                 fg_color='#0D47A1', hover_color='#0C3A7A').pack(side='left', padx=5)
         
@@ -138,9 +153,13 @@ class ProgramTab(BaseTab):
                                            font=('Helvetica', 11))
         self.step_info_label.pack(side='left', padx=5)
         
-        self.step_time_label = ctk.CTkLabel(step_progress_frame, text="Time remaining: -", 
+        self.step_time_label = ctk.CTkLabel(step_progress_frame, text="Time remaining (step): -", 
                                            font=('Helvetica', 10))
         self.step_time_label.pack(side='left', padx=5)
+        
+        self.step_total_time_label = ctk.CTkLabel(step_progress_frame, text="Time remaining (total): -", 
+                                                 font=('Helvetica', 10))
+        self.step_total_time_label.pack(side='left', padx=5)
         
         self.step_progress_bar = ctk.CTkProgressBar(step_progress_frame, width=300)
         self.step_progress_bar.pack(side='left', padx=5)
@@ -155,9 +174,11 @@ class ProgramTab(BaseTab):
         new_step = {
             'step': step_num,
             'duration': 60,
-            'flow_rate': 1.5,
+            'flow_rate': 0.2,
             'measurement_mode': 'voltage',
-            'valve': 'main'
+            'valve': 'main',
+            'bias_voltage': 0.0,
+            'bias_current': 0.0
         }
         self.table_data.append(new_step)
         self.update_table_display()
@@ -210,7 +231,9 @@ class ProgramTab(BaseTab):
                 step['duration'],
                 step['flow_rate'],
                 step['measurement_mode'],
-                step['valve']
+                step['valve'],
+                step.get('bias_voltage', 0),
+                step.get('bias_current', 0)
             ))
     
     def on_cell_click(self, event):
@@ -238,7 +261,7 @@ class ProgramTab(BaseTab):
                 return
             
             # Column names mapping
-            column_names = ['Step', 'Duration (s)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve']
+            column_names = ['Step', 'Duration (s)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve', 'Bias Voltage (V)', 'Bias Current (A)']
             column_name = column_names[column_index]
             
             # Edit based on column
@@ -322,6 +345,32 @@ class ProgramTab(BaseTab):
                     messagebox.showerror('Error', 'Valve must be "main" or "rinsing".')
                     return
         
+        elif column_name == 'Bias Voltage (V)':
+            new_value = simpledialog.askstring(
+                "Edit Bias Voltage",
+                "Enter Bias Voltage (V):",
+                initialvalue=str(current_value)
+            )
+            if new_value is not None and new_value.strip():
+                try:
+                    step['bias_voltage'] = float(new_value)
+                except ValueError:
+                    messagebox.showerror('Error', 'Invalid number.')
+                    return
+        
+        elif column_name == 'Bias Current (A)':
+            new_value = simpledialog.askstring(
+                "Edit Bias Current",
+                "Enter Bias Current (A):",
+                initialvalue=str(current_value)
+            )
+            if new_value is not None and new_value.strip():
+                try:
+                    step['bias_current'] = float(new_value)
+                except ValueError:
+                    messagebox.showerror('Error', 'Invalid number.')
+                    return
+        
         # Update display
         self.update_table_display()
     
@@ -336,11 +385,10 @@ class ProgramTab(BaseTab):
                 'flow_rate': step['flow_rate'],
                 'valve_setting': {'valve1': True, 'valve2': False} if step['valve'] == 'main' else {'valve1': False, 'valve2': True}
             }
-            
-            # Add measurement_mode if specified
             if step.get('measurement_mode'):
                 step_dict['measurement_mode'] = step['measurement_mode']
-            
+            step_dict['bias_voltage'] = step.get('bias_voltage', 0.0)
+            step_dict['bias_current'] = step.get('bias_current', 0.0)
             program.append(step_dict)
         
         return program
@@ -365,11 +413,12 @@ class ProgramTab(BaseTab):
                     step = {
                         'step': int(row.get('Step', idx + 1)),
                         'duration': int(row.get('Duration (s)', 60)),
-                        'flow_rate': float(row.get('Flow Rate (ml/min)', 1.5)),
+                        'flow_rate': float(row.get('Flow Rate (ml/min)', 0.2)),
                         'measurement_mode': str(row.get('Measurement Mode', 'voltage')).lower(),
-                        'valve': str(row.get('Valve', 'main')).lower()
+                        'valve': str(row.get('Valve', 'main')).lower(),
+                        'bias_voltage': float(row.get('Bias Voltage (V)', 0)),
+                        'bias_current': float(row.get('Bias Current (A)', 0))
                     }
-                    # Validate
                     if step['measurement_mode'] not in ['voltage', 'current']:
                         step['measurement_mode'] = 'voltage'
                     if step['valve'] not in ['main', 'rinsing']:
@@ -378,7 +427,6 @@ class ProgramTab(BaseTab):
                         step['flow_rate'] = 5.0
                     if step['flow_rate'] < 0:
                         step['flow_rate'] = 0.0
-                    
                     self.table_data.append(step)
                 
                 self.renumber_steps()
@@ -403,8 +451,12 @@ class ProgramTab(BaseTab):
             if filename:
                 # Convert table_data to DataFrame
                 sorted_data = sorted(self.table_data, key=lambda x: x['step'])
+                for s in sorted_data:
+                    s.setdefault('bias_voltage', 0.0)
+                    s.setdefault('bias_current', 0.0)
                 df = pd.DataFrame(sorted_data)
-                df.columns = ['Step', 'Duration (s)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve']
+                df = df[['step', 'duration', 'flow_rate', 'measurement_mode', 'valve', 'bias_voltage', 'bias_current']]
+                df.columns = ['Step', 'Duration (s)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve', 'Bias Voltage (V)', 'Bias Current (A)']
                 
                 if filename.endswith('.csv'):
                     df.to_csv(filename, index=False)
@@ -423,25 +475,25 @@ class ProgramTab(BaseTab):
             if selected:
                 templates = {
                     'Standard Test': [
-                        {'step': 1, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main'},
-                        {'step': 2, 'duration': 30, 'flow_rate': 2.0, 'measurement_mode': 'voltage', 'valve': 'main'},
-                        {'step': 3, 'duration': 60, 'flow_rate': 0.5, 'measurement_mode': 'voltage', 'valve': 'main'}
+                        {'step': 1, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 2, 'duration': 30, 'flow_rate': 2.0, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 3, 'duration': 60, 'flow_rate': 0.5, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0}
                     ],
                     'Flow Ramp': [
-                        {'step': 1, 'duration': 60, 'flow_rate': 0.5, 'measurement_mode': 'voltage', 'valve': 'main'},
-                        {'step': 2, 'duration': 60, 'flow_rate': 1.0, 'measurement_mode': 'voltage', 'valve': 'main'},
-                        {'step': 3, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main'},
-                        {'step': 4, 'duration': 60, 'flow_rate': 2.0, 'measurement_mode': 'voltage', 'valve': 'main'}
+                        {'step': 1, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 2, 'duration': 60, 'flow_rate': 0.5, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 3, 'duration': 60, 'flow_rate': 1.0, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 4, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0}
                     ],
                     'Valve Switching Test': [
-                        {'step': 1, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main'},
-                        {'step': 2, 'duration': 30, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'rinsing'},
-                        {'step': 3, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main'}
+                        {'step': 1, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 2, 'duration': 30, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'rinsing', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 3, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0}
                     ],
                     'Measurement Mode Switch': [
-                        {'step': 1, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main'},
-                        {'step': 2, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'current', 'valve': 'main'},
-                        {'step': 3, 'duration': 60, 'flow_rate': 2.0, 'measurement_mode': 'voltage', 'valve': 'main'}
+                        {'step': 1, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 2, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'current', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 3, 'duration': 60, 'flow_rate': 2.0, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0}
                     ]
                 }
                 
@@ -454,70 +506,86 @@ class ProgramTab(BaseTab):
             messagebox.showerror('Error', f"Error loading template: {e}")
     
     def run_program(self):
-        """Run program - triggers MainTab.start_recording_from_program_tab()"""
+        """Run program via Main tab (default)."""
+        self._last_run_via_resistance = False
+        self._run_program_impl(self.main_tab_ref, "Main")
+
+    def run_program_from_resistance_tab(self):
+        """Run program via Resistance tab (graphs and recording in Resistance tab)."""
+        self._last_run_via_resistance = True
+        self._run_program_impl(self.resistance_tab_ref, "Resistance")
+
+    def _run_program_impl(self, tab_ref, tab_name):
+        """Run program using the given tab (Main or Resistance). Uses Run name from this tab if set."""
         try:
-            # Convert table to program format
             experiment_program = self.table_to_program()
-            
             if not experiment_program:
                 messagebox.showerror('Error', "No program steps defined. Please add at least one step.")
                 return
-            
-            # Check if MainTab reference exists
-            if not self.main_tab_ref:
-                messagebox.showerror('Error', 
-                    "MainTab reference not available. Cannot start recording.\n"
-                    "Please use the Main tab to start experiments.")
+            if not tab_ref:
+                messagebox.showerror('Error',
+                    f"{tab_name} tab reference not available. Cannot start recording.")
                 return
-            
-            # Check if experiment name is set in MainTab
-            exp_name = self.main_tab_ref.exp_name_entry.get().strip()
-            if not exp_name:
-                messagebox.showwarning('Warning', 
-                    'Please enter an experiment name in the Main tab before running program.\n\n'
-                    'The program will use the Main tab for recording and monitoring.')
+            # Prefer run name from this tab; otherwise use name from target tab
+            run_name = self.run_name_entry.get().strip() if hasattr(self, 'run_name_entry') else ''
+            if not run_name:
+                run_name = tab_ref.exp_name_entry.get().strip()
+            if not run_name:
+                messagebox.showwarning('Warning',
+                    'Enter a run name here (Run name) or in the {} tab.'.format(tab_name))
                 return
-            
-            # Call the wrapper method
-            success = self.main_tab_ref.start_recording_from_program_tab(experiment_program)
-            
+            if not re.match(r'^[a-zA-Z0-9_-]+$', run_name):
+                messagebox.showerror('Error', 'Run name can only contain letters, numbers, underscores, and hyphens.')
+                return
+            # Set target tab's experiment name so the run uses this file name
+            tab_ref.exp_name_entry.delete(0, 'end')
+            tab_ref.exp_name_entry.insert(0, run_name)
+            success = tab_ref.start_recording_from_program_tab(experiment_program)
             if success:
                 if self.update_queue:
-                    self.update_queue.put(('UPDATE_PROGRAM_STATUS', 
-                        f"Program started via Main tab: {len(experiment_program)} steps"))
+                    self.update_queue.put(('UPDATE_PROGRAM_STATUS',
+                        f"Program started via {tab_name} tab: {len(experiment_program)} steps"))
             else:
-                messagebox.showerror('Error', 
+                messagebox.showerror('Error',
                     'Failed to start program. Please check:\n'
                     '1. Experiment name is valid\n'
                     '2. All program steps are valid')
-                
         except Exception as e:
             messagebox.showerror('Error', f"Error running program: {e}")
             import traceback
             traceback.print_exc()
     
-    def update_step_progress(self, step_index, total_steps, step_remaining, step_progress):
-        """Update step progress widgets"""
+    def _format_time_remaining(self, seconds):
+        """Format seconds as 'Xm Ys' or 'Xs'."""
+        if seconds is None or seconds < 0:
+            return "-"
+        s = int(round(seconds))
+        if s > 60:
+            return f"{s // 60}m {s % 60}s"
+        return f"{s}s"
+
+    def update_step_progress(self, step_index, total_steps, step_remaining, step_progress, total_remaining=None):
+        """Update step progress widgets. total_remaining = time left for entire program."""
         if hasattr(self, 'step_info_label'):
             self.step_info_label.configure(text=f"Step: {step_index} / {total_steps}")
         
         if hasattr(self, 'step_time_label'):
-            if step_remaining > 60:
-                mins = int(step_remaining // 60)
-                secs = int(step_remaining % 60)
-                self.step_time_label.configure(text=f"Time remaining: {mins}m {secs}s")
-            else:
-                self.step_time_label.configure(text=f"Time remaining: {int(step_remaining)}s")
+            self.step_time_label.configure(text=f"Time remaining (step): {self._format_time_remaining(step_remaining)}")
+        
+        if hasattr(self, 'step_total_time_label'):
+            self.step_total_time_label.configure(text=f"Time remaining (total): {self._format_time_remaining(total_remaining)}")
         
         if hasattr(self, 'step_progress_bar'):
             self.step_progress_bar.set(step_progress)
     
     def stop_program(self):
-        """Stop program - triggers MainTab.stop_recording()"""
-        if self.main_tab_ref:
-            self.main_tab_ref.stop_recording()
+        """Stop program - stops the tab that started it (Main or Resistance)."""
+        tab = self.resistance_tab_ref if self._last_run_via_resistance else self.main_tab_ref
+        if tab:
+            tab.stop_recording()
+            tab_name = "Resistance" if self._last_run_via_resistance else "Main"
             if self.update_queue:
-                self.update_queue.put(('UPDATE_PROGRAM_STATUS', "Program stopped via Main tab"))
+                self.update_queue.put(('UPDATE_PROGRAM_STATUS', f"Program stopped via {tab_name} tab"))
         else:
             self.exp_manager.stop_experiment()
             if self.update_queue:

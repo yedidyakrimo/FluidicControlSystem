@@ -7,6 +7,7 @@ from tkinter import messagebox, filedialog
 import os
 import glob
 import json
+import shutil
 from datetime import datetime
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -26,6 +27,10 @@ class BrowserTab(BaseTab):
         # Experiment list tracking
         self.experiment_buttons = []
         self.selected_experiments = []
+        
+        # Target folder for copying selected experiments
+        self.experiments_folder = None
+        self.experiments_folder_label = None
         
         # Create widgets
         self.create_widgets()
@@ -55,6 +60,15 @@ class BrowserTab(BaseTab):
         
         self.create_blue_button(search_controls, text='Refresh', command=self.refresh_experiments, width=100).pack(side='left', padx=5)
         
+        # Current experiments folder selector
+        folder_frame = ctk.CTkFrame(search_frame)
+        folder_frame.pack(fill='x', padx=5, pady=(0, 5))
+        
+        ctk.CTkLabel(folder_frame, text='Current folder:', width=120).pack(side='left', padx=5)
+        self.experiments_folder_label = ctk.CTkLabel(folder_frame, text='Not selected', anchor='w')
+        self.experiments_folder_label.pack(side='left', fill='x', expand=True, padx=5)
+        self.create_blue_button(folder_frame, text='Choose Folder', command=self.choose_experiments_folder, width=140).pack(side='right', padx=5)
+        
         # Experiments list
         list_frame = ctk.CTkFrame(self)
         list_frame.pack(fill='both', expand=True, padx=10, pady=5)
@@ -70,6 +84,7 @@ class BrowserTab(BaseTab):
         self.create_blue_button(action_frame, text='Load Selected', command=self.load_experiment, width=150).pack(side='left', padx=5)
         self.create_blue_button(action_frame, text='Compare Selected', command=self.compare_experiments, width=150).pack(side='left', padx=5)
         self.create_blue_button(action_frame, text='Export Selected', command=self.export_selected_experiment, width=150).pack(side='left', padx=5)
+        self.create_blue_button(action_frame, text='Save to folder', command=self.save_selected_to_folder, width=150).pack(side='left', padx=5)
     
     def refresh_experiments(self):
         """Refresh the list of experiments from data folder"""
@@ -297,7 +312,6 @@ class BrowserTab(BaseTab):
                 filetypes=[('Excel Files', '*.xlsx'), ('CSV Files', '*.csv')]
             )
             if filename:
-                import shutil
                 if filename.endswith('.csv'):
                     shutil.copy(selected[0]['file'], filename)
                 else:
@@ -307,4 +321,64 @@ class BrowserTab(BaseTab):
                 messagebox.showinfo('Success', 'Experiment exported successfully!')
         except Exception as e:
             messagebox.showerror('Error', f"Error exporting experiment: {e}")
+
+    def choose_experiments_folder(self):
+        """Choose or change the current experiments target folder"""
+        folder = filedialog.askdirectory()
+        if folder:
+            self.experiments_folder = folder
+            if self.experiments_folder_label is not None:
+                self.experiments_folder_label.configure(text=self.experiments_folder)
+    
+    def save_selected_to_folder(self):
+        """Copy selected experiments (csv + metadata + xlsx) to the chosen experiments folder"""
+        selected = [exp for exp in self.experiment_buttons if exp['var'].get()]
+        if not selected:
+            messagebox.showwarning('Warning', 'Please select at least one experiment to save to folder.')
+            return
+        
+        # Ensure experiments folder is selected
+        if not self.experiments_folder:
+            messagebox.showinfo('Select Folder', 'Please choose a target folder for experiments.')
+            self.choose_experiments_folder()
+            if not self.experiments_folder:
+                # User cancelled folder selection
+                return
+        
+        try:
+            if not os.path.exists(self.experiments_folder):
+                os.makedirs(self.experiments_folder, exist_ok=True)
+            
+            copied_count = 0
+            for exp in selected:
+                src_csv = exp['file']
+                if not os.path.exists(src_csv):
+                    continue
+                
+                base_name = os.path.basename(src_csv)
+                dst_csv = os.path.join(self.experiments_folder, base_name)
+                shutil.copy(src_csv, dst_csv)
+                
+                # Copy metadata JSON if exists
+                metadata_file = src_csv.replace('.csv', '_metadata.json')
+                if os.path.exists(metadata_file):
+                    dst_metadata = os.path.join(self.experiments_folder, os.path.basename(metadata_file))
+                    shutil.copy(metadata_file, dst_metadata)
+                
+                # Copy Excel file if it exists
+                excel_file = src_csv.replace('.csv', '.xlsx')
+                if os.path.exists(excel_file):
+                    dst_excel = os.path.join(self.experiments_folder, os.path.basename(excel_file))
+                    shutil.copy(excel_file, dst_excel)
+                
+                copied_count += 1
+            
+            if copied_count > 0:
+                messagebox.showinfo('Success', f'Saved {copied_count} experiment(s) to folder:\n{self.experiments_folder}')
+            else:
+                messagebox.showwarning('Warning', 'No experiments were copied. Source files may be missing.')
+        except PermissionError:
+            messagebox.showerror('Error', f'Permission denied when writing to:\n{self.experiments_folder}')
+        except Exception as e:
+            messagebox.showerror('Error', f"Error saving experiments to folder: {e}")
 

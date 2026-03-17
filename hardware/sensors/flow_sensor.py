@@ -16,7 +16,7 @@ class FlowSensor(HardwareBase):
     Connected through NI USB-6002
     """
     
-    def __init__(self, ni_daq=None, channel='ai2', pump_setpoint_flow=1.5):
+    def __init__(self, ni_daq=None, channel='ai2', pump_setpoint_flow=0.2):
         """
         Initialize flow sensor
         

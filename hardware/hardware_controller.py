@@ -39,7 +39,7 @@ class HardwareController:
         # Initialize sensors (connected to NI DAQ)
         self.pressure_sensor = PressureSensor(ni_daq=self.ni_daq, channel='ai0')
         self.temperature_sensor = TemperatureSensor(ni_daq=self.ni_daq, channel='ai1')
-        self.flow_sensor = FlowSensor(ni_daq=self.ni_daq, channel='ai2', pump_setpoint_flow=1.5)
+        self.flow_sensor = FlowSensor(ni_daq=self.ni_daq, channel='ai2', pump_setpoint_flow=0.2)
         self.level_sensor = LevelSensor(ni_daq=self.ni_daq, channel='ai3')
         
         # Initialize SMU

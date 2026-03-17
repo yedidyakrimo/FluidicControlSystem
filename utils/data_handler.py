@@ -308,8 +308,8 @@ if __name__ == "__main__":
     # Simulate some data points and append them.
     simulated_data_point_1 = {
         "time": 1.0,
-        "flow_setpoint": 1.5,
-        "pump_flow_read": 1.48,
+        "flow_setpoint": 0.2,
+        "pump_flow_read": 0.19,
         "pressure_read": 10.2,
         "temp_read": 25.5
     }
@@ -317,8 +317,8 @@ if __name__ == "__main__":
 
     simulated_data_point_2 = {
         "time": 2.0,
-        "flow_setpoint": 1.5,
-        "pump_flow_read": 1.51,
+        "flow_setpoint": 0.2,
+        "pump_flow_read": 0.21,
         "pressure_read": 10.3,
         "temp_read": 25.6
     }
