@@ -36,7 +36,8 @@ class TemperatureSensor(HardwareBase):
             self.connected = True
             self.simulation_mode = False
         else:
-            self.enable_simulation()
+            self.connected = False
+            self.simulation_mode = False
     
     def connect(self):
         """Connect to sensor (via NI DAQ)"""
@@ -45,7 +46,8 @@ class TemperatureSensor(HardwareBase):
             self.simulation_mode = False
             return True
         else:
-            self.enable_simulation()
+            self.connected = False
+            self.simulation_mode = False
             return False
     
     def disconnect(self):
@@ -109,12 +111,7 @@ class TemperatureSensor(HardwareBase):
                 logger.debug(f"Error reading temperature sensor: {e}")
                 return None
         else:
-            # Simulation mode - return realistic value
-            elapsed = time.time() - self.sim_start_time
-            base_temp = 25.0  # Room temperature
-            variation = 5.0 * math.sin(2 * math.pi * elapsed / 45.0)
-            sim_temp = base_temp + variation
-            return max(20.0, min(50.0, sim_temp))  # Clamp between 20°C and 50°C
+            return None
     
     def calculate_temperature_from_voltage(self, voltage_measured):
         """

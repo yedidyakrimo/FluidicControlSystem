@@ -282,9 +282,9 @@ class MainTab(BaseTab):
         
         duration_frame = ctk.CTkFrame(exp_frame)
         duration_frame.pack(fill='x', padx=5, pady=2)
-        ctk.CTkLabel(duration_frame, text='Duration (sec):', width=150).pack(side='left', padx=5)
+        ctk.CTkLabel(duration_frame, text='Duration (min):', width=150).pack(side='left', padx=5)
         self.duration_entry = ctk.CTkEntry(duration_frame, width=100)
-        self.duration_entry.insert(0, '6000')
+        self.duration_entry.insert(0, '2')
         self.duration_entry.pack(side='left', padx=5)
         
         valve_frame = ctk.CTkFrame(exp_frame)
@@ -903,7 +903,11 @@ class MainTab(BaseTab):
                 self.flow_rate_entry.delete(0, 'end')
                 self.flow_rate_entry.insert(0, str(MAX_FLOW_RATE))
             
-            duration = int(self.duration_entry.get())
+            duration_minutes = float(self.duration_entry.get())
+            if duration_minutes < 0:
+                messagebox.showerror('Error', 'Duration cannot be negative.')
+                return
+            duration = duration_minutes * 60.0
             valve_setting = {'valve1': self.valve_var.get() == 'main', 'valve2': self.valve_var.get() == 'rinsing'}
             
             self.current_flow_rate = flow_rate
@@ -968,7 +972,7 @@ class MainTab(BaseTab):
             logger.debug(f"Thread started: {thread.is_alive()}")
         except ValueError as e:
             logger.warning(f"ValueError in start_recording: {e}")
-            messagebox.showerror('Error', 'Invalid input for Flow Rate or Duration. Please enter numbers.')
+            messagebox.showerror('Error', 'Invalid input for Flow Rate or Duration (minutes). Please enter numbers.')
         except Exception as e:
             logger.error(f"Unexpected error in start_recording: {e}", exc_info=True)
             messagebox.showerror('Error', f'Unexpected error: {e}')
@@ -1640,6 +1644,34 @@ class MainTab(BaseTab):
         
         experiment_start_time = self.experiment_base_time
         total_steps = len(experiment_program)
+
+        # Preflight pump check before first step to avoid intermittent start failures.
+        try:
+            pump = self.exp_manager.hw_controller.pump
+            pump_info = pump.get_info()
+            needs_reconnect = (not pump_info.get('connected', False)) or pump_info.get('simulation_mode', False)
+            if needs_reconnect:
+                if self.update_queue:
+                    self.update_queue.put(('UPDATE_STATUS', 'Pump preflight: reconnecting...'))
+                reconnect_ok = pump.force_reconnect() if hasattr(pump, 'force_reconnect') else pump.connect()
+                if reconnect_ok:
+                    time.sleep(1.0)
+                    self.after(0, lambda: self.pump_status_label.configure(text='✓ Connected', text_color='green'))
+                else:
+                    if self.update_queue:
+                        self.update_queue.put(('UPDATE_STATUS', 'Experiment stopped: pump not connected'))
+                        self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Stopped: Pump Disconnected', 'red')))
+                    self.exp_manager.stop_experiment()
+                    self.after(0, lambda: self.pump_status_label.configure(text='✗ Disconnected', text_color='red'))
+                    return
+        except Exception as e:
+            logger.warning(f"Pump preflight failed: {e}")
+            if self.update_queue:
+                self.update_queue.put(('UPDATE_STATUS', 'Experiment stopped: pump preflight failed'))
+                self.update_queue.put(('UPDATE_RECORDING_STATUS', ('Stopped: Pump Preflight Error', 'red')))
+            self.exp_manager.stop_experiment()
+            self.after(0, lambda: self.pump_status_label.configure(text='✗ Disconnected', text_color='red'))
+            return
         
         for step_index, step in enumerate(experiment_program, start=1):
             if not self.exp_manager.is_running:
@@ -1666,7 +1698,7 @@ class MainTab(BaseTab):
                     mode_display = "Voltage" if step.get('measurement_mode') == 'voltage' else "Current"
                     measurement_mode_str = f", Mode={mode_display}"
                 self.update_queue.put(('UPDATE_STATUS', 
-                    f"Executing step {step_index}/{total_steps}: Duration={duration}s, Flow Rate={flow_rate} ml/min{temp_str}{measurement_mode_str}"))
+                    f"Executing step {step_index}/{total_steps}: Duration={duration / 60.0:.2f} min, Flow Rate={flow_rate} ml/min{temp_str}{measurement_mode_str}"))
             
             # Set heating plate temperature if provided (optional, backward compatible)
             if temperature is not None:
@@ -1678,10 +1710,14 @@ class MainTab(BaseTab):
             # Set pump flow rate and start the pump (with timeout handling)
             logger.debug(f"Setting pump flow rate to {flow_rate} ml/min")
             try:
-                self.exp_manager.hw_controller.set_pump_flow_rate(flow_rate)
+                flow_set_ok = self.exp_manager.hw_controller.set_pump_flow_rate(flow_rate)
+                if not flow_set_ok:
+                    raise RuntimeError("Failed setting pump flow rate")
                 time.sleep(0.3)  # Wait for pump to process flow rate setting
                 logger.debug("Starting pump...")
                 pump_started = self.exp_manager.hw_controller.start_pump()  # Start the pump
+                if not pump_started:
+                    raise RuntimeError("Pump start returned False")
                 logger.debug(f"Pump start result: {pump_started}")
                 time.sleep(0.5)  # Wait for pump to actually start running
                 logger.debug("Setting valves...")
@@ -1695,6 +1731,29 @@ class MainTab(BaseTab):
                 # Mark pump as disconnected
                 if hasattr(self.exp_manager.hw_controller.pump, 'connected'):
                     self.exp_manager.hw_controller.pump.connected = False
+
+                # One automatic recovery attempt before stopping experiment
+                retry_success = False
+                try:
+                    pump = self.exp_manager.hw_controller.pump
+                    if hasattr(pump, 'force_reconnect'):
+                        logger.warning("Attempting automatic pump recovery...")
+                        if self.update_queue:
+                            self.update_queue.put(('UPDATE_STATUS', 'Pump error detected, retrying reconnect...'))
+                        if pump.force_reconnect():
+                            time.sleep(1.0)
+                            flow_set_ok = self.exp_manager.hw_controller.set_pump_flow_rate(flow_rate)
+                            pump_started = self.exp_manager.hw_controller.start_pump()
+                            retry_success = bool(flow_set_ok and pump_started)
+                            if retry_success:
+                                logger.info("Automatic pump recovery succeeded")
+                                self.after(0, lambda: self.pump_status_label.configure(text='✓ Connected', text_color='green'))
+                                self.exp_manager.hw_controller.set_valves(valve_setting['valve1'], valve_setting['valve2'])
+                except Exception as retry_error:
+                    logger.warning(f"Automatic pump recovery failed: {retry_error}")
+
+                if retry_success:
+                    continue
                 
                 # Stop the experiment safely
                 if self.update_queue:

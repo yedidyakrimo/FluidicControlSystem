@@ -5,6 +5,7 @@ Updated to use the vapourtec library
 
 import time
 import math
+import threading
 from hardware.base import HardwareBase
 from utils.logger_config import get_logger
 
@@ -52,6 +53,7 @@ class VapourtecPump(HardwareBase):
         self.tube_type = tube_type
         self.pump = None
         self.ser = None  # Direct serial access for raw commands
+        self._io_lock = threading.RLock()
         
         # Simulation state variables
         self.sim_start_time = time.time()
@@ -64,51 +66,22 @@ class VapourtecPump(HardwareBase):
     
     def connect(self):
         """Connect to pump via vapourtec library"""
-        if not VAPOURTEC_AVAILABLE:
-            print("Vapourtec library not available. Running in simulation mode.")
-            self.enable_simulation()
-            return False
-        
-        try:
-            # Use vapourtec library for connection handshake
-            self.pump = SF10(self.port)
-            # Get direct access to serial port for raw commands
-            # This is needed because the library doesn't support all commands natively
-            self.ser = self.pump.ser
-            
-            # CRITICAL PATCH: The library does not natively support setting the "Black" tube type
-            # This prevents the pump from accepting flow rates. We must send a raw command.
-            logger.debug(f"Setting Tube Type to ID {self.tube_type} (Black tube)...")
-            self.ser.write(f'STTA {self.tube_type}\r\n'.encode())
-            time.sleep(0.5)  # Wait for hardware to process the command
-            
-            # Set mode to flow mode using library method
-            if hasattr(self.pump, 'MODE_FLOW'):
-                self.pump.set_mode(self.pump.MODE_FLOW)
-            
-            logger.info(f"Connected to Vapourtec pump on port {self.port}")
-            self.connected = True
-            self.simulation_mode = False
-            return True
-        except Exception as e:
-            logger.warning(f"Error connecting to Vapourtec pump: {e}")
-            self.pump = None
-            self.ser = None
-            self.enable_simulation()
-            return False
+        # Use the same robust retry path as manual refresh.
+        return self.force_reconnect()
     
     def disconnect(self):
         """Disconnect from pump"""
-        if self.pump:
-            try:
-                self.stop()  # Stop pump before disconnecting
-                self.pump.disconnect()
-            except Exception as e:
-                logger.debug(f"Error during disconnect: {e}")
-            self.pump = None
-            self.ser = None
-        self.connected = False
-        self.is_running = False
+        with self._io_lock:
+            if self.pump:
+                try:
+                    self.stop()  # Stop pump before disconnecting
+                    self.pump.disconnect()
+                except Exception as e:
+                    logger.debug(f"Error during disconnect: {e}")
+                self.pump = None
+                self.ser = None
+            self.connected = False
+            self.is_running = False
     
     def force_reconnect(self):
         """
@@ -118,98 +91,99 @@ class VapourtecPump(HardwareBase):
         Returns:
             True if successfully connected, False otherwise
         """
-        if not VAPOURTEC_AVAILABLE:
-            logger.debug("Vapourtec library not available. Cannot force reconnect.")
+        with self._io_lock:
+            if not VAPOURTEC_AVAILABLE:
+                logger.debug("Vapourtec library not available. Cannot force reconnect.")
+                self.enable_simulation()
+                return False
+            
+            # --- Aggressive Cleanup First ---
+            logger.debug(f"Attempting hard reconnection to pump on port {self.port}...")
+            
+            try:
+                # Stop pump before disconnecting
+                if self.pump:
+                    try:
+                        self.stop()
+                    except Exception:
+                        pass
+                
+                # Close all connections aggressively
+                if self.pump:
+                    try:
+                        self.pump.disconnect()
+                    except Exception:
+                        pass
+                if self.ser:
+                    try:
+                        self.ser.close()
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.debug(f"Error during cleanup: {e}")
+            
+            # Reset all references
+            self.pump = None
+            self.ser = None
+            self.connected = False
+            self.is_running = False
+            
+            # --- Retry Loop (The Fix) ---
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    logger.debug(f"Connection attempt {attempt+1}/{max_retries}...")
+                    
+                    # 1. Initialize Library
+                    self.pump = SF10(self.port)
+                    self.ser = self.pump.ser
+                    
+                    # 2. CRITICAL: Send Black Tube Command
+                    # Allow a tiny pause for serial to stabilize
+                    time.sleep(0.2)
+                    logger.debug(f"Setting Tube Type to ID {self.tube_type} (Black tube)...")
+                    self.ser.write(f'STTA {self.tube_type}\r\n'.encode())
+                    time.sleep(0.5)  # Wait for hardware to process the command
+                    
+                    # 3. Set Mode
+                    if hasattr(self.pump, 'MODE_FLOW'):
+                        logger.debug("Setting mode to FLOW...")
+                        self.pump.set_mode(self.pump.MODE_FLOW)
+                    
+                    # 4. Success!
+                    logger.info(f"Connected successfully on attempt {attempt+1}")
+                    self.connected = True
+                    self.simulation_mode = False
+                    return True
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    logger.debug(f"Attempt {attempt+1} failed: {error_msg}")
+                    
+                    # Clean up specific to this failed attempt
+                    try:
+                        if self.pump:
+                            self.pump.disconnect()
+                    except Exception:
+                        pass
+                    try:
+                        if self.ser:
+                            self.ser.close()
+                    except Exception:
+                        pass
+                    
+                    self.pump = None
+                    self.ser = None
+                    
+                    # If this was not the last attempt, wait and try again
+                    if attempt < max_retries - 1:
+                        logger.debug("Waiting 2 seconds for device to recover...")
+                        time.sleep(2.0)  # Critical wait for pump boot-up or port release
+            
+            # If we get here, all retries failed
+            logger.warning("All connection attempts failed. Falling back to Simulation.")
             self.enable_simulation()
             return False
-        
-        # --- Aggressive Cleanup First ---
-        logger.debug(f"Attempting hard reconnection to pump on port {self.port}...")
-        
-        try:
-            # Stop pump before disconnecting
-            if self.pump:
-                try:
-                    self.stop()
-                except:
-                    pass
-            
-            # Close all connections aggressively
-            if self.pump:
-                try:
-                    self.pump.disconnect()
-                except:
-                    pass
-            if self.ser:
-                try:
-                    self.ser.close()
-                except:
-                    pass
-        except Exception as e:
-            logger.debug(f"Error during cleanup: {e}")
-        
-        # Reset all references
-        self.pump = None
-        self.ser = None
-        self.connected = False
-        self.is_running = False
-        
-        # --- Retry Loop (The Fix) ---
-        max_retries = 2
-        for attempt in range(max_retries):
-            try:
-                logger.debug(f"Connection attempt {attempt+1}/{max_retries}...")
-                
-                # 1. Initialize Library
-                self.pump = SF10(self.port)
-                self.ser = self.pump.ser
-                
-                # 2. CRITICAL: Send Black Tube Command
-                # Allow a tiny pause for serial to stabilize
-                time.sleep(0.2)
-                logger.debug(f"Setting Tube Type to ID {self.tube_type} (Black tube)...")
-                self.ser.write(f'STTA {self.tube_type}\r\n'.encode())
-                time.sleep(0.5)  # Wait for hardware to process the command
-                
-                # 3. Set Mode
-                if hasattr(self.pump, 'MODE_FLOW'):
-                    logger.debug("Setting mode to FLOW...")
-                    self.pump.set_mode(self.pump.MODE_FLOW)
-                
-                # 4. Success!
-                logger.info(f"Connected successfully on attempt {attempt+1}")
-                self.connected = True
-                self.simulation_mode = False
-                return True
-                
-            except Exception as e:
-                error_msg = str(e)
-                logger.debug(f"Attempt {attempt+1} failed: {error_msg}")
-                
-                # Clean up specific to this failed attempt
-                try:
-                    if self.pump:
-                        self.pump.disconnect()
-                except:
-                    pass
-                try:
-                    if self.ser:
-                        self.ser.close()
-                except:
-                    pass
-                
-                self.pump = None
-                self.ser = None
-                
-                # If this was not the last attempt, wait and try again
-                if attempt < max_retries - 1:
-                    logger.debug("Waiting 2 seconds for device to recover...")
-                    time.sleep(2.0)  # Critical wait for pump boot-up or port release
-        
-        # If we get here, all retries failed
-        logger.warning("All connection attempts failed. Falling back to Simulation.")
-        self.enable_simulation()
-        return False
     
     def set_flow_rate(self, flow_rate_ml_min):
         """
@@ -233,84 +207,88 @@ class VapourtecPump(HardwareBase):
             logger.warning("Flow rate cannot be negative. Setting to 0.")
             flow_rate_ml_min = 0.0
         
-        if self.pump and self.connected:
-            try:
-                # Use library method - this works after tube type is set
-                self.pump.set_flow_rate(float(flow_rate_ml_min))
-                logger.debug(f"Set pump flow rate to {flow_rate_ml_min} ml/min.")
-                # Store for simulation fallback
+        with self._io_lock:
+            if self.pump and self.connected:
+                try:
+                    # Use library method - this works after tube type is set
+                    self.pump.set_flow_rate(float(flow_rate_ml_min))
+                    logger.debug(f"Set pump flow rate to {flow_rate_ml_min} ml/min.")
+                    # Store for simulation fallback
+                    self.previous_setpoint_flow = self.pump_setpoint_flow
+                    self.pump_setpoint_flow = flow_rate_ml_min
+                    self.flow_change_time = time.time()
+                    return True
+                except Exception as e:
+                    logger.warning(f"Error setting flow rate: {e}")
+                    return False
+            else:
+                # Simulation mode
+                logger.debug("Pump is not connected. Simulating flow rate setting.")
                 self.previous_setpoint_flow = self.pump_setpoint_flow
                 self.pump_setpoint_flow = flow_rate_ml_min
                 self.flow_change_time = time.time()
+                time.sleep(0.1)
                 return True
-            except Exception as e:
-                logger.warning(f"Error setting flow rate: {e}")
-                return False
-        else:
-            # Simulation mode
-            logger.debug("Pump is not connected. Simulating flow rate setting.")
-            self.previous_setpoint_flow = self.pump_setpoint_flow
-            self.pump_setpoint_flow = flow_rate_ml_min
-            self.flow_change_time = time.time()
-            time.sleep(0.1)
-            return True
     
     def start(self):
         """Start the pump - following the exact sequence from working examples"""
-        if self.pump and self.connected:
-            try:
-                logger.debug("Starting pump...")
-                
-                # Step 1: Ensure tube type is set (should already be set in connect, but double-check)
-                if self.ser:
-                    logger.debug("Verifying tube type is set...")
-                    self.ser.write(f'STTA {self.tube_type}\r\n'.encode())
-                    time.sleep(0.5)
-                
-                # Step 2: Ensure mode is set to FLOW
-                if hasattr(self.pump, 'MODE_FLOW'):
-                    logger.debug("Setting mode to FLOW...")
-                    self.pump.set_mode(self.pump.MODE_FLOW)
-                    time.sleep(0.2)
-                
-                # Step 3: Ensure flow rate is set before starting
-                if self.pump_setpoint_flow > 0:
-                    logger.debug(f"Setting flow rate to {self.pump_setpoint_flow} ml/min...")
-                    self.pump.set_flow_rate(float(self.pump_setpoint_flow))
-                    time.sleep(0.3)  # Wait for pump to process flow rate
-                
-                # Step 4: Start the pump using library method (as in working examples)
-                logger.debug("Calling pump.start()...")
-                self.pump.start()
-                time.sleep(0.5)  # Wait for pump to actually start running
-                
+        with self._io_lock:
+            if self.pump and self.connected:
+                try:
+                    logger.debug("Starting pump...")
+                    
+                    # Step 1: Ensure tube type is set (should already be set in connect, but double-check)
+                    if self.ser:
+                        logger.debug("Verifying tube type is set...")
+                        self.ser.write(f'STTA {self.tube_type}\r\n'.encode())
+                        time.sleep(0.5)
+                    
+                    # Step 2: Ensure mode is set to FLOW
+                    if hasattr(self.pump, 'MODE_FLOW'):
+                        logger.debug("Setting mode to FLOW...")
+                        self.pump.set_mode(self.pump.MODE_FLOW)
+                        time.sleep(0.2)
+                    
+                    # Step 3: Ensure flow rate is set before starting
+                    if self.pump_setpoint_flow > 0:
+                        logger.debug(f"Setting flow rate to {self.pump_setpoint_flow} ml/min...")
+                        self.pump.set_flow_rate(float(self.pump_setpoint_flow))
+                        time.sleep(0.3)  # Wait for pump to process flow rate
+                    
+                    # Step 4: Start the pump using library method (as in working examples)
+                    logger.debug("Calling pump.start()...")
+                    self.pump.start()
+                    time.sleep(0.5)  # Wait for pump to actually start running
+                    
+                    self.is_running = True
+                    logger.info("Pump started successfully!")
+                    return True
+                except Exception as e:
+                    logger.error(f"Error starting pump: {e}", exc_info=True)
+                    self.is_running = False
+                    self.connected = False
+                    return False
+            else:
+                logger.debug("Pump is not connected. Simulating start.")
                 self.is_running = True
-                logger.info("Pump started successfully!")
                 return True
-            except Exception as e:
-                logger.error(f"Error starting pump: {e}", exc_info=True)
-                self.is_running = False
-                return False
-        else:
-            logger.debug("Pump is not connected. Simulating start.")
-            self.is_running = True
-            return True
     
     def stop(self):
         """Stop the pump"""
-        if self.pump and self.connected:
-            try:
-                self.pump.stop()
+        with self._io_lock:
+            if self.pump and self.connected:
+                try:
+                    self.pump.stop()
+                    self.is_running = False
+                    logger.debug("Pump stopped.")
+                    return True
+                except Exception as e:
+                    logger.warning(f"Error stopping pump: {e}")
+                    return False
+            else:
+                logger.debug("Pump is not connected. Simulating stop.")
                 self.is_running = False
-                logger.debug("Pump stopped.")
                 return True
-            except Exception as e:
-                logger.warning(f"Error stopping pump: {e}")
-                return False
-        else:
-            logger.debug("Pump is not connected. Simulating stop.")
-            self.is_running = False
-            return True
     
     def get_pressure(self):
         """
@@ -325,54 +303,55 @@ class VapourtecPump(HardwareBase):
         Returns:
             Pressure value in bar (or 0.0 if empty/error, or None on connection failure)
         """
-        if self.pump and self.ser and self.connected:
-            try:
-                # Clear any pending data first
-                if self.ser.in_waiting > 0:
-                    self.ser.read(self.ser.in_waiting)
-                
-                # Send GP command (Get Pressure) - raw bytes as specified
-                self.ser.write(b'GP\r\n')
-                
-                # CRITICAL: Must wait 0.1 seconds to allow pump to populate buffer
-                time.sleep(0.1)
-                
-                # CRITICAL: Use in_waiting to check available bytes (NOT read_all())
-                bytes_available = self.ser.in_waiting
-                
-                if bytes_available > 0:
-                    # Read exactly the number of bytes available
-                    response_bytes = self.ser.read(bytes_available)
-                    response = response_bytes.decode('ascii', errors='ignore').strip()
+        with self._io_lock:
+            if self.pump and self.ser and self.connected:
+                try:
+                    # Clear any pending data first
+                    if self.ser.in_waiting > 0:
+                        self.ser.read(self.ser.in_waiting)
                     
-                    # Try to parse as float
-                    if response:
-                        try:
-                            pressure = float(response)
-                            return pressure
-                        except ValueError:
-                            # If not a number, try to extract number from response
-                            import re
-                            numbers = re.findall(r'-?\d+\.?\d*', response)
-                            if numbers:
-                                try:
-                                    pressure = float(numbers[0])
-                                    return pressure
-                                except ValueError:
-                                    pass
-                            # Could not parse - return 0.0 as specified
-                            logger.debug(f"Could not parse pressure response: '{response}'. Returning 0.0")
-                            return 0.0
-                else:
-                    # No response - return 0.0 as specified
-                    return 0.0
+                    # Send GP command (Get Pressure) - raw bytes as specified
+                    self.ser.write(b'GP\r\n')
                     
-            except Exception as e:
-                logger.debug(f"Error reading pressure: {e}")
-                return None
-        else:
-            # Simulation mode - return simulated pressure
-            return self._simulate_data().get('pressure')
+                    # CRITICAL: Must wait 0.1 seconds to allow pump to populate buffer
+                    time.sleep(0.1)
+                    
+                    # CRITICAL: Use in_waiting to check available bytes (NOT read_all())
+                    bytes_available = self.ser.in_waiting
+                    
+                    if bytes_available > 0:
+                        # Read exactly the number of bytes available
+                        response_bytes = self.ser.read(bytes_available)
+                        response = response_bytes.decode('ascii', errors='ignore').strip()
+                        
+                        # Try to parse as float
+                        if response:
+                            try:
+                                pressure = float(response)
+                                return pressure
+                            except ValueError:
+                                # If not a number, try to extract number from response
+                                import re
+                                numbers = re.findall(r'-?\d+\.?\d*', response)
+                                if numbers:
+                                    try:
+                                        pressure = float(numbers[0])
+                                        return pressure
+                                    except ValueError:
+                                        pass
+                                # Could not parse - return 0.0 as specified
+                                logger.debug(f"Could not parse pressure response: '{response}'. Returning 0.0")
+                                return 0.0
+                    else:
+                        # No response - return 0.0 as specified
+                        return 0.0
+                        
+                except Exception as e:
+                    logger.debug(f"Error reading pressure: {e}")
+                    return None
+            else:
+                # Simulation mode - return simulated pressure
+                return self._simulate_data().get('pressure')
     
     def read_data(self):
         """
@@ -461,59 +440,60 @@ class VapourtecPump(HardwareBase):
         
         # Active Health Check: Only if we think we're connected
         if self.connected and not self.simulation_mode and self.ser:
-            try:
-                # Clear any pending data first
-                if self.ser.in_waiting > 0:
-                    self.ser.read(self.ser.in_waiting)
-                
-                # Send GV (Get Version) command as a ping
-                # This verifies the device is actually responsive, not just that the port is open
-                self.ser.write(b'GV\r\n')
-                time.sleep(0.5)  # Increased wait time for response (from 0.2 to 0.5)
-                
-                # Check if we got a response (even if we don't parse it)
-                if self.ser.in_waiting > 0:
-                    # Device responded - read and discard the response
-                    self.ser.read(self.ser.in_waiting)
-                    info["status"] = "Connected"
-                    info["status_color"] = "green"
-                    info["connected"] = True  # Ensure connected flag is set
-                else:
-                    # No response - try one more time with longer wait
-                    time.sleep(0.5)
+            with self._io_lock:
+                try:
+                    # Clear any pending data first
                     if self.ser.in_waiting > 0:
+                        self.ser.read(self.ser.in_waiting)
+                    
+                    # Send GV (Get Version) command as a ping
+                    # This verifies the device is actually responsive, not just that the port is open
+                    self.ser.write(b'GV\r\n')
+                    time.sleep(0.5)  # Increased wait time for response (from 0.2 to 0.5)
+                    
+                    # Check if we got a response (even if we don't parse it)
+                    if self.ser.in_waiting > 0:
+                        # Device responded - read and discard the response
                         self.ser.read(self.ser.in_waiting)
                         info["status"] = "Connected"
                         info["status_color"] = "green"
-                        info["connected"] = True
+                        info["connected"] = True  # Ensure connected flag is set
                     else:
-                        # Still no response - device is not responsive
-                        raise Exception("No response to GV command after retry")
+                        # No response - try one more time with longer wait
+                        time.sleep(0.5)
+                        if self.ser.in_waiting > 0:
+                            self.ser.read(self.ser.in_waiting)
+                            info["status"] = "Connected"
+                            info["status_color"] = "green"
+                            info["connected"] = True
+                        else:
+                            # Still no response - device is not responsive
+                            raise Exception("No response to GV command after retry")
+                        
+                except Exception as e:
+                    # Timeout or communication error - device is not responsive
+                    error_msg = str(e)
+                    logger.debug(f"Pump health check failed: {error_msg}")
                     
-            except Exception as e:
-                # Timeout or communication error - device is not responsive
-                error_msg = str(e)
-                logger.debug(f"Pump health check failed: {error_msg}")
-                
-                # Close the connection explicitly
-                try:
-                    if self.pump:
-                        self.pump.disconnect()
-                except:
-                    pass
-                try:
-                    if self.ser:
-                        self.ser.close()
-                except:
-                    pass
-                
-                # Mark as disconnected
-                self.pump = None
-                self.ser = None
-                self.connected = False
-                info["connected"] = False
-                info["status"] = "Not Connected"
-                info["status_color"] = "red"
+                    # Close the connection explicitly
+                    try:
+                        if self.pump:
+                            self.pump.disconnect()
+                    except Exception:
+                        pass
+                    try:
+                        if self.ser:
+                            self.ser.close()
+                    except Exception:
+                        pass
+                    
+                    # Mark as disconnected
+                    self.pump = None
+                    self.ser = None
+                    self.connected = False
+                    info["connected"] = False
+                    info["status"] = "Not Connected"
+                    info["status_color"] = "red"
         elif self.connected and not self.simulation_mode:
             # Connected but no serial port yet (just after force_reconnect)
             # This can happen briefly after reconnection

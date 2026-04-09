@@ -314,7 +314,10 @@ class FluidicControlApp(ctk.CTk):
                                 self.main_tab_instance.temp_label.configure(text=f"{temp:.2f} °C", text_color='green')
                             else:
                                 self.main_tab_instance.temp_label.configure(text="---", text_color='red')
-                            self.main_tab_instance.flow_label.configure(text=f"{flow:.2f} ml/min")
+                            if flow is not None:
+                                self.main_tab_instance.flow_label.configure(text=f"{flow:.2f} ml/min", text_color='green')
+                            else:
+                                self.main_tab_instance.flow_label.configure(text="N/A", text_color='red')
                             # FIXED: Handle None level (sensor disconnected)
                             if level is not None:
                                 self.main_tab_instance.level_label.configure(text=f"{level:.2f} %", text_color='green')
@@ -340,7 +343,10 @@ class FluidicControlApp(ctk.CTk):
                                 self.resistance_tab_instance.temp_label.configure(text=f"{temp:.2f} °C", text_color='green')
                             else:
                                 self.resistance_tab_instance.temp_label.configure(text="---", text_color='red')
-                            self.resistance_tab_instance.flow_label.configure(text=f"{flow:.2f} ml/min")
+                            if flow is not None:
+                                self.resistance_tab_instance.flow_label.configure(text=f"{flow:.2f} ml/min", text_color='green')
+                            else:
+                                self.resistance_tab_instance.flow_label.configure(text="N/A", text_color='red')
                             if level is not None:
                                 self.resistance_tab_instance.level_label.configure(text=f"{level:.2f} %", text_color='green')
                             else:
@@ -490,7 +496,10 @@ class FluidicControlApp(ctk.CTk):
                                 self.resistance_tab_instance.temp_label.configure(text=f"{temp:.2f} °C", text_color='green')
                             else:
                                 self.resistance_tab_instance.temp_label.configure(text="---", text_color='red')
-                            self.resistance_tab_instance.flow_label.configure(text=f"{flow:.2f} ml/min")
+                            if flow is not None:
+                                self.resistance_tab_instance.flow_label.configure(text=f"{flow:.2f} ml/min", text_color='green')
+                            else:
+                                self.resistance_tab_instance.flow_label.configure(text="N/A", text_color='red')
                             if level is not None:
                                 self.resistance_tab_instance.level_label.configure(text=f"{level:.2f} %", text_color='green')
                             else:

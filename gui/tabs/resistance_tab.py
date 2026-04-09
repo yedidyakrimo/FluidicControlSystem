@@ -428,7 +428,11 @@ class ResistanceTab(MainTab):
                 flow_rate = MAX_FLOW_RATE
                 self.flow_rate_entry.delete(0, 'end')
                 self.flow_rate_entry.insert(0, str(MAX_FLOW_RATE))
-            duration = int(self.duration_entry.get())
+            duration_minutes = float(self.duration_entry.get())
+            if duration_minutes < 0:
+                messagebox.showerror('Error', 'Duration cannot be negative.')
+                return
+            duration = duration_minutes * 60.0
             valve_setting = {'valve1': self.valve_var.get() == 'main', 'valve2': self.valve_var.get() == 'rinsing'}
             self.current_flow_rate = flow_rate
             experiment_program = [{'duration': duration, 'flow_rate': flow_rate, 'valve_setting': valve_setting}]
@@ -470,7 +474,7 @@ class ResistanceTab(MainTab):
         except ValueError as e:
             logger.warning(f"ValueError in start_recording: {e}")
             from tkinter import messagebox as mb
-            mb.showerror('Error', 'Invalid input for Flow Rate or Duration. Please enter numbers.')
+            mb.showerror('Error', 'Invalid input for Flow Rate or Duration (minutes). Please enter numbers.')
 
     def stop_recording(self):
         """Stop recording; send status to this tab."""
@@ -555,7 +559,7 @@ class ResistanceTab(MainTab):
                 mode_str = ""
                 if step.get('measurement_mode'):
                     mode_str = f", Mode={'Voltage' if step.get('measurement_mode') == 'voltage' else 'Current'}"
-                self._rtab_put('UPDATE_STATUS', f"Executing step {step_index}/{total_steps}: Duration={duration}s, Flow Rate={flow_rate} ml/min{temp_str}{mode_str}")
+                self._rtab_put('UPDATE_STATUS', f"Executing step {step_index}/{total_steps}: Duration={duration / 60.0:.2f} min, Flow Rate={flow_rate} ml/min{temp_str}{mode_str}")
             if temperature is not None:
                 try:
                     self.exp_manager.hw_controller.set_heating_plate_temp(temperature)

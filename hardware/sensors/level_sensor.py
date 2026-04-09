@@ -2,8 +2,6 @@
 Level sensor control module
 """
 
-import time
-import math
 from hardware.base import HardwareBase
 from utils.logger_config import get_logger
 
@@ -28,13 +26,13 @@ class LevelSensor(HardwareBase):
         self.device_name = "Level Sensor"
         self.ni_daq = ni_daq
         self.channel = channel
-        self.sim_start_time = time.time()
         
         if ni_daq and ni_daq.is_connected():
             self.connected = True
             self.simulation_mode = False
         else:
-            self.enable_simulation()
+            self.connected = False
+            self.simulation_mode = False
     
     def connect(self):
         """Connect to sensor (via NI DAQ)"""
@@ -43,7 +41,8 @@ class LevelSensor(HardwareBase):
             self.simulation_mode = False
             return True
         else:
-            self.enable_simulation()
+            self.connected = False
+            self.simulation_mode = False
             return False
     
     def disconnect(self):
@@ -58,14 +57,9 @@ class LevelSensor(HardwareBase):
             Level as fraction (0.0 to 1.0) or None on error (in real mode)
             In simulation mode, returns simulated value
         """
-        # If in simulation mode, return simulated value
+        # If no DAQ is available, do not provide simulated values
         if self.simulation_mode or not (self.ni_daq and self.ni_daq.is_connected()):
-            # Realistic simulation
-            elapsed = time.time() - self.sim_start_time
-            base_level = 0.5  # 50% full
-            variation = 0.3 * math.sin(2 * math.pi * elapsed / 60.0)
-            sim_level = base_level + variation
-            return max(0.05, min(0.95, sim_level))  # Clamp between 5% and 95%
+            return None
         
         # Real mode - try to read actual sensor
         try:

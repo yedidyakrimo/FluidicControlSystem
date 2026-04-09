@@ -10,6 +10,10 @@ except ImportError:
     NIUSB6002 = None
     print("Warning: NI USB-6002 not available (nidaqmx not installed)")
 
-from .mcusb_1408fs import MCusb1408FS
+try:
+    from .mcusb_1408fs import MCusb1408FS
+except (ImportError, OSError):
+    MCusb1408FS = None
+    print("Warning: MCusb-1408FS not available (cbw64.dll / MCC Universal Library not installed)")
 
 __all__ = ['NIUSB6002', 'MCusb1408FS']

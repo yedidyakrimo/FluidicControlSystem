@@ -24,7 +24,7 @@ class ProgramTab(BaseTab):
         self._last_run_via_resistance = False  # Track which tab started the program (for Stop)
         
         # Store table data
-        self.table_data = []  # List of dicts: [{'step': 1, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main'}, ...]
+        self.table_data = []  # List of dicts: [{'step': 1, 'duration': 1.0, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main'}, ...]
         
         # Create widgets
         self.create_widgets()
@@ -50,7 +50,7 @@ class ProgramTab(BaseTab):
         # Treeview table
         self.program_table = ttk.Treeview(
             table_container,
-            columns=('Step', 'Duration (s)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve', 'Bias Voltage (V)', 'Bias Current (A)'),
+            columns=('Step', 'Duration (min)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve', 'Bias Voltage (V)', 'Bias Current (A)'),
             show='headings',
             yscrollcommand=v_scrollbar.set,
             xscrollcommand=h_scrollbar.set,
@@ -63,7 +63,7 @@ class ProgramTab(BaseTab):
         
         # Define column headings and widths
         self.program_table.heading('Step', text='Step')
-        self.program_table.heading('Duration (s)', text='Duration (s)')
+        self.program_table.heading('Duration (min)', text='Duration (min)')
         self.program_table.heading('Flow Rate (ml/min)', text='Flow Rate (ml/min)')
         self.program_table.heading('Measurement Mode', text='Measurement Mode')
         self.program_table.heading('Valve', text='Valve')
@@ -71,7 +71,7 @@ class ProgramTab(BaseTab):
         self.program_table.heading('Bias Current (A)', text='Bias Current (A)')
         
         self.program_table.column('Step', width=60, anchor='center')
-        self.program_table.column('Duration (s)', width=120, anchor='center')
+        self.program_table.column('Duration (min)', width=120, anchor='center')
         self.program_table.column('Flow Rate (ml/min)', width=150, anchor='center')
         self.program_table.column('Measurement Mode', width=180, anchor='center')
         self.program_table.column('Valve', width=100, anchor='center')
@@ -173,7 +173,7 @@ class ProgramTab(BaseTab):
         step_num = len(self.table_data) + 1
         new_step = {
             'step': step_num,
-            'duration': 60,
+            'duration': 1.0,
             'flow_rate': 0.2,
             'measurement_mode': 'voltage',
             'valve': 'main',
@@ -261,7 +261,7 @@ class ProgramTab(BaseTab):
                 return
             
             # Column names mapping
-            column_names = ['Step', 'Duration (s)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve', 'Bias Voltage (V)', 'Bias Current (A)']
+            column_names = ['Step', 'Duration (min)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve', 'Bias Voltage (V)', 'Bias Current (A)']
             column_name = column_names[column_index]
             
             # Edit based on column
@@ -276,16 +276,16 @@ class ProgramTab(BaseTab):
             messagebox.showinfo('Info', 'Use "Renumber Steps" button to renumber steps.')
             return
         
-        elif column_name == 'Duration (s)':
+        elif column_name == 'Duration (min)':
             # Duration - numeric input
             new_value = simpledialog.askstring(
                 "Edit Duration",
-                "Enter Duration (seconds):",
+                "Enter Duration (minutes):",
                 initialvalue=str(current_value)
             )
             if new_value is not None and new_value.strip():
                 try:
-                    duration = int(float(new_value))
+                    duration = float(new_value)
                     if duration < 0:
                         messagebox.showerror('Error', 'Duration must be positive.')
                         return
@@ -380,8 +380,10 @@ class ProgramTab(BaseTab):
         sorted_data = sorted(self.table_data, key=lambda x: x['step'])
         
         for step in sorted_data:
+            duration_minutes = float(step.get('duration', 0))
             step_dict = {
-                'duration': step['duration'],
+                # Keep internal timing in seconds so runtime behavior/resolution is unchanged.
+                'duration': duration_minutes * 60.0,
                 'flow_rate': step['flow_rate'],
                 'valve_setting': {'valve1': True, 'valve2': False} if step['valve'] == 'main' else {'valve1': False, 'valve2': True}
             }
@@ -410,9 +412,14 @@ class ProgramTab(BaseTab):
                 
                 # Convert DataFrame to table_data format
                 for idx, row in df.iterrows():
+                    if 'Duration (min)' in row:
+                        duration_minutes = float(row.get('Duration (min)', 1.0))
+                    else:
+                        # Backward compatibility: older files store seconds.
+                        duration_minutes = float(row.get('Duration (s)', 60)) / 60.0
                     step = {
                         'step': int(row.get('Step', idx + 1)),
-                        'duration': int(row.get('Duration (s)', 60)),
+                        'duration': duration_minutes,
                         'flow_rate': float(row.get('Flow Rate (ml/min)', 0.2)),
                         'measurement_mode': str(row.get('Measurement Mode', 'voltage')).lower(),
                         'valve': str(row.get('Valve', 'main')).lower(),
@@ -456,7 +463,7 @@ class ProgramTab(BaseTab):
                     s.setdefault('bias_current', 0.0)
                 df = pd.DataFrame(sorted_data)
                 df = df[['step', 'duration', 'flow_rate', 'measurement_mode', 'valve', 'bias_voltage', 'bias_current']]
-                df.columns = ['Step', 'Duration (s)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve', 'Bias Voltage (V)', 'Bias Current (A)']
+                df.columns = ['Step', 'Duration (min)', 'Flow Rate (ml/min)', 'Measurement Mode', 'Valve', 'Bias Voltage (V)', 'Bias Current (A)']
                 
                 if filename.endswith('.csv'):
                     df.to_csv(filename, index=False)
@@ -475,25 +482,25 @@ class ProgramTab(BaseTab):
             if selected:
                 templates = {
                     'Standard Test': [
-                        {'step': 1, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
-                        {'step': 2, 'duration': 30, 'flow_rate': 2.0, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
-                        {'step': 3, 'duration': 60, 'flow_rate': 0.5, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0}
+                        {'step': 1, 'duration': 1.0, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 2, 'duration': 0.5, 'flow_rate': 2.0, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 3, 'duration': 1.0, 'flow_rate': 0.5, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0}
                     ],
                     'Flow Ramp': [
-                        {'step': 1, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
-                        {'step': 2, 'duration': 60, 'flow_rate': 0.5, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
-                        {'step': 3, 'duration': 60, 'flow_rate': 1.0, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
-                        {'step': 4, 'duration': 60, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0}
+                        {'step': 1, 'duration': 1.0, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 2, 'duration': 1.0, 'flow_rate': 0.5, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 3, 'duration': 1.0, 'flow_rate': 1.0, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 4, 'duration': 1.0, 'flow_rate': 1.5, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0}
                     ],
                     'Valve Switching Test': [
-                        {'step': 1, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
-                        {'step': 2, 'duration': 30, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'rinsing', 'bias_voltage': 0.0, 'bias_current': 0.0},
-                        {'step': 3, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0}
+                        {'step': 1, 'duration': 1.0, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 2, 'duration': 0.5, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'rinsing', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 3, 'duration': 1.0, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0}
                     ],
                     'Measurement Mode Switch': [
-                        {'step': 1, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
-                        {'step': 2, 'duration': 60, 'flow_rate': 0.2, 'measurement_mode': 'current', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
-                        {'step': 3, 'duration': 60, 'flow_rate': 2.0, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0}
+                        {'step': 1, 'duration': 1.0, 'flow_rate': 0.2, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 2, 'duration': 1.0, 'flow_rate': 0.2, 'measurement_mode': 'current', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0},
+                        {'step': 3, 'duration': 1.0, 'flow_rate': 2.0, 'measurement_mode': 'voltage', 'valve': 'main', 'bias_voltage': 0.0, 'bias_current': 0.0}
                     ]
                 }
                 

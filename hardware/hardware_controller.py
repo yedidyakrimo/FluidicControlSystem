@@ -5,7 +5,10 @@ This class provides a unified interface to all hardware devices
 
 from .pump.vapourtec_pump import VapourtecPump
 from .smu.keithley_2450 import Keithley2450
-from .ni_daq.mcusb_1408fs import MCusb1408FS
+try:
+    from .ni_daq.mcusb_1408fs import MCusb1408FS
+except (ImportError, OSError):
+    MCusb1408FS = None
 from .sensors.pressure_sensor import PressureSensor
 from .sensors.temperature_sensor import TemperatureSensor
 from .sensors.flow_sensor import FlowSensor
@@ -34,7 +37,7 @@ class HardwareController:
         self.pump = VapourtecPump(port=pump_port)
         
         # Initialize MCusb-1408FS-Plus DAQ (replacing NI USB-6002)
-        self.ni_daq = MCusb1408FS(board_num=mc_board_num)
+        self.ni_daq = MCusb1408FS(board_num=mc_board_num) if MCusb1408FS is not None else None
         
         # Initialize sensors (connected to NI DAQ)
         self.pressure_sensor = PressureSensor(ni_daq=self.ni_daq, channel='ai0')
