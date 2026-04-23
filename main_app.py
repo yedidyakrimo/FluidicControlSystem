@@ -24,7 +24,7 @@ from gui.tabs.program_tab import ProgramTab
 from gui.tabs.browser_tab import BrowserTab
 # Temporarily disabled tabs (uncomment to re-enable):
 # from gui.tabs.scheduler_tab import SchedulerTab
-# from gui.tabs.iv_program_tab import IVProgramTab
+from gui.tabs.iv_program_tab import IVProgramTab
 # from gui.tabs.cv_tab import CVTab
 from gui.tabs.resistance_tab import ResistanceTab
 
@@ -132,10 +132,17 @@ class FluidicControlApp(ctk.CTk):
         )
         self.browser_tab_instance.pack(fill='both', expand=True)
         
+        iv_program_tab_frame = self.tabview.add("Write Program IV")
+        self.iv_program_tab_instance = IVProgramTab(
+            iv_program_tab_frame,
+            self.hw_controller,
+            self.data_handler,
+            self.exp_manager,
+            self.update_queue
+        )
+        self.iv_program_tab_instance.pack(fill='both', expand=True)
+
         # Temporarily disabled tabs (uncomment to re-enable):
-        # iv_program_tab_frame = self.tabview.add("Write Program IV")
-        # self.iv_program_tab_instance = IVProgramTab(...)
-        # self.iv_program_tab_instance.pack(fill='both', expand=True)
         # scheduler_tab_frame = self.tabview.add("Scheduler")
         # self.scheduler_tab_instance = SchedulerTab(...)
         # self.scheduler_tab_instance.pack(fill='both', expand=True)
@@ -283,9 +290,14 @@ class FluidicControlApp(ctk.CTk):
                         elif update_type == 'UPDATE_IV_STATUS_BAR':
                             self.iv_tab_instance.iv_status_bar.configure(text=data)
                         elif update_type == 'UPDATE_IV_TIME_GRAPH':
-                            x_axis_type = self.iv_tab_instance.iv_x_axis_combo.get()
-                            y_axis_type = self.iv_tab_instance.iv_y_axis_combo.get()
-                            self.iv_tab_instance.plot_iv_xy_graph(x_axis_type, y_axis_type)
+                            if isinstance(data, (tuple, list)) and len(data) == 3:
+                                t_data, v_data, i_data = data
+                                self.iv_tab_instance.update_iv_time_graph(t_data, v_data, i_data)
+                                self.iv_tab_instance.update_iv_statistics()
+                            else:
+                                x_axis_type = self.iv_tab_instance.iv_x_axis_combo.get()
+                                y_axis_type = self.iv_tab_instance.iv_y_axis_combo.get()
+                                self.iv_tab_instance.plot_iv_xy_graph(x_axis_type, y_axis_type)
                         elif update_type == 'UPDATE_MCUSB_CH0':
                             # MCusb channel 0 reading update
                             voltage = data
@@ -639,6 +651,8 @@ class FluidicControlApp(ctk.CTk):
                 self.iv_tab_instance.cleanup()
             if hasattr(self, 'program_tab_instance'):
                 self.program_tab_instance.cleanup()
+            if hasattr(self, 'iv_program_tab_instance'):
+                self.iv_program_tab_instance.cleanup()
             if hasattr(self, 'browser_tab_instance'):
                 self.browser_tab_instance.cleanup()
             if hasattr(self, 'scheduler_tab_instance'):

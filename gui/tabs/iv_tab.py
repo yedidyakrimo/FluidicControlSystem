@@ -26,6 +26,8 @@ class IVTab(BaseTab):
         self.iv_time_x_data, self.iv_time_v_data, self.iv_time_i_data = [], [], []
         self.iv_measurement_start_time = None
         self.iv_measurement_stop = False  # Flag to stop measurement
+        self.iv_auto_scale_enabled = True  # Default: auto-scale ON for IV graph
+        self.iv_output_enabled = False
         
         # Temperature sensor channel (ai1 is already used for temperature in hardware_controller)
         self.temp_sensor_channel = 'ai1'  # Using ai1 which is the temperature sensor channel
@@ -59,135 +61,17 @@ class IVTab(BaseTab):
         left_frame = ctk.CTkScrollableFrame(left_container, width=400)
         left_frame.pack(fill='both', expand=True)
         
-        # SMU Connection Status
-        smu_status_frame = ctk.CTkFrame(left_frame)
-        smu_status_frame.pack(fill='x', pady=5)
-        ctk.CTkLabel(smu_status_frame, text="Keithley 2450 SMU Status", font=('Helvetica', 14, 'bold')).pack(pady=5)
-        
-        smu_info_frame = ctk.CTkFrame(smu_status_frame)
-        smu_info_frame.pack(fill='x', padx=5, pady=5)
-        
-        ctk.CTkLabel(smu_info_frame, text='Status:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
-        self.smu_status_label = ctk.CTkLabel(smu_info_frame, text='Checking...', width=250, anchor='w')
-        self.smu_status_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
-        
-        ctk.CTkLabel(smu_info_frame, text='Device ID:', width=100).grid(row=1, column=0, padx=5, pady=2, sticky='w')
-        self.smu_idn_label = ctk.CTkLabel(smu_info_frame, text='N/A', width=250, anchor='w', wraplength=250)
-        self.smu_idn_label.grid(row=1, column=1, padx=5, pady=2, sticky='w')
-        
-        ctk.CTkLabel(smu_info_frame, text='Resource:', width=100).grid(row=2, column=0, padx=5, pady=2, sticky='w')
-        self.smu_resource_label = ctk.CTkLabel(smu_info_frame, text='N/A', width=250, anchor='w', wraplength=250)
-        self.smu_resource_label.grid(row=2, column=1, padx=5, pady=2, sticky='w')
-        
-        # Control buttons
-        smu_btn_frame = ctk.CTkFrame(smu_status_frame)
-        smu_btn_frame.pack(pady=5)
-        self.create_blue_button(smu_btn_frame, text='🔍 Detect SMU', command=self.detect_smu, width=120, height=30).pack(side='left', padx=2)
-        self.create_blue_button(smu_btn_frame, text='🔄 Refresh Status', command=self.refresh_smu_status, width=120, height=30).pack(side='left', padx=2)
-        self.create_blue_button(smu_btn_frame, text='📋 List Devices', command=self.list_visa_devices, width=120, height=30).pack(side='left', padx=2)
-        
-        # ========== PUMP CONTROL PANEL ==========
-        pump_status_frame = ctk.CTkFrame(left_frame)
-        pump_status_frame.pack(fill='x', pady=5)
-        ctk.CTkLabel(pump_status_frame, text="Vapourtec SF-10 Pump Status", 
-                     font=('Helvetica', 14, 'bold')).pack(pady=5)
-        
-        pump_info_frame = ctk.CTkFrame(pump_status_frame)
-        pump_info_frame.pack(fill='x', padx=5, pady=5)
-        
-        # Status
-        ctk.CTkLabel(pump_info_frame, text='Status:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
-        self.iv_pump_status_label = ctk.CTkLabel(pump_info_frame, text='Checking...', width=250, anchor='w')
-        self.iv_pump_status_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
-        
-        # Quick Flow Rate Setting
-        flow_quick_frame = ctk.CTkFrame(pump_status_frame)
-        flow_quick_frame.pack(fill='x', padx=5, pady=5)
-        ctk.CTkLabel(flow_quick_frame, text='Quick Flow Rate (ml/min):', width=150).pack(side='left', padx=5)
-        self.iv_flow_rate_entry = ctk.CTkEntry(flow_quick_frame, width=100)
-        self.iv_flow_rate_entry.insert(0, '0.2')
-        self.iv_flow_rate_entry.pack(side='left', padx=5)
-        self.iv_update_flow_btn = self.create_blue_button(flow_quick_frame, text='Update Flow',
-                                                          command=self.iv_update_flow, width=100)
-        self.iv_update_flow_btn.pack(side='left', padx=2)
-        
-        # Bind sync events for iv_flow_rate_entry (will be bound after iv_flow_entry is created)
-        
-        # Refresh button
-        pump_btn_frame = ctk.CTkFrame(pump_status_frame)
-        pump_btn_frame.pack(pady=5)
-        self.create_blue_button(pump_btn_frame, text='🔄 Refresh Status', 
-                               command=self.iv_refresh_pump_status, width=120, height=30).pack(side='left', padx=2)
-        
-        # Refresh pump status on startup
-        self.after(1500, self.iv_refresh_pump_status)
-        
-        # Quick SMU Control
-        smu_control_frame = ctk.CTkFrame(left_frame)
-        smu_control_frame.pack(fill='x', pady=5)
-        ctk.CTkLabel(smu_control_frame, text="Quick SMU Control", font=('Helvetica', 14, 'bold')).pack(pady=5)
-        
-        smu_control_grid = ctk.CTkFrame(smu_control_frame)
-        smu_control_grid.pack(fill='x', padx=5, pady=5)
-        
-        ctk.CTkLabel(smu_control_grid, text='Set Voltage (V):', width=120).grid(row=0, column=0, padx=5, pady=2)
-        self.smu_voltage_entry = ctk.CTkEntry(smu_control_grid, width=100)
-        self.smu_voltage_entry.insert(0, '0.0')
-        self.smu_voltage_entry.grid(row=0, column=1, padx=5, pady=2)
-        
-        ctk.CTkLabel(smu_control_grid, text='Current Limit (A):', width=120).grid(row=1, column=0, padx=5, pady=2)
-        self.smu_current_limit_entry = ctk.CTkEntry(smu_control_grid, width=100)
-        self.smu_current_limit_entry.insert(0, '0.1')
-        self.smu_current_limit_entry.grid(row=1, column=1, padx=5, pady=2)
-        
-        smu_control_btn_frame = ctk.CTkFrame(smu_control_frame)
-        smu_control_btn_frame.pack(pady=5)
-        self.create_blue_button(smu_control_btn_frame, text='Set Voltage', command=self.set_smu_voltage_manual, width=100, height=30).pack(side='left', padx=2)
-        self.create_blue_button(smu_control_btn_frame, text='Measure', command=self.measure_smu_manual, width=100, height=30).pack(side='left', padx=2)
-        self.create_blue_button(smu_control_btn_frame, text='Output OFF', command=self.smu_output_off, width=100, height=30,
-                                fg_color='#0D47A1', hover_color='#0C3A7A').pack(side='left', padx=2)
-        
-        # MCusb-1408FS-Plus DAQ Status (Primary measurement device)
-        mcusb_status_frame = ctk.CTkFrame(left_frame)
-        mcusb_status_frame.pack(fill='x', pady=5)
-        ctk.CTkLabel(mcusb_status_frame, text="MCusb-1408FS-Plus DAQ Status", font=('Helvetica', 14, 'bold')).pack(pady=5)
-        
-        mcusb_info_frame = ctk.CTkFrame(mcusb_status_frame)
-        mcusb_info_frame.pack(fill='x', padx=5, pady=5)
-        
-        ctk.CTkLabel(mcusb_info_frame, text='Status:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
-        self.mcusb_status_label = ctk.CTkLabel(mcusb_info_frame, text='Checking...', width=250, anchor='w')
-        self.mcusb_status_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
-        
-        ctk.CTkLabel(mcusb_info_frame, text='Device:', width=100).grid(row=1, column=0, padx=5, pady=2, sticky='w')
-        self.mcusb_device_label = ctk.CTkLabel(mcusb_info_frame, text='N/A', width=250, anchor='w')
-        self.mcusb_device_label.grid(row=1, column=1, padx=5, pady=2, sticky='w')
-        
-        ctk.CTkLabel(mcusb_info_frame, text='Channel 0 (IN HI):', width=100).grid(row=2, column=0, padx=5, pady=2, sticky='w')
-        self.mcusb_ch0_label = ctk.CTkLabel(mcusb_info_frame, text='N/A', width=250, anchor='w')
-        self.mcusb_ch0_label.grid(row=2, column=1, padx=5, pady=2, sticky='w')
-        
-        # Control buttons
-        mcusb_btn_frame = ctk.CTkFrame(mcusb_status_frame)
-        mcusb_btn_frame.pack(pady=5)
-        self.create_blue_button(mcusb_btn_frame, text='🔄 Refresh', command=self.refresh_mcusb_status, width=120, height=30).pack(side='left', padx=2)
-        self.create_blue_button(mcusb_btn_frame, text='📊 Read Channels', command=self.read_mcusb_channels, width=120, height=30).pack(side='left', padx=2)
-        
-        # Temperature Monitor
-        temp_monitor_frame = ctk.CTkFrame(left_frame)
-        temp_monitor_frame.pack(fill='x', pady=5)
-        ctk.CTkLabel(temp_monitor_frame, text="Temperature Monitor", font=('Helvetica', 14, 'bold')).pack(pady=5)
-        
-        temp_info_frame = ctk.CTkFrame(temp_monitor_frame)
-        temp_info_frame.pack(fill='x', padx=5, pady=5)
-        
-        ctk.CTkLabel(temp_info_frame, text='Temperature:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
-        self.temp_display_label = ctk.CTkLabel(temp_info_frame, text='N/A', width=250, anchor='w', font=('Helvetica', 12, 'bold'))
-        self.temp_display_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
-        
-        ctk.CTkLabel(temp_info_frame, text='Voltage (V):', width=100).grid(row=1, column=0, padx=5, pady=2, sticky='w')
-        self.temp_voltage_label = ctk.CTkLabel(temp_info_frame, text='N/A', width=250, anchor='w')
-        self.temp_voltage_label.grid(row=1, column=1, padx=5, pady=2, sticky='w')
+        # Top of IV tab now starts with experiment configuration/controls.
+        # Hardware status/control panels are moved to the bottom by request.
+        output_top_frame = ctk.CTkFrame(left_frame)
+        output_top_frame.pack(fill='x', pady=5)
+        self.iv_output_var = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(
+            output_top_frame,
+            text="Enable SMU Output",
+            variable=self.iv_output_var,
+            command=self.on_iv_output_toggle
+        ).pack(side='left', padx=8, pady=6)
         
         # I-V Parameters
         params_frame = ctk.CTkFrame(left_frame)
@@ -212,14 +96,14 @@ class IVTab(BaseTab):
         self.iv_step_entry.insert(0, '0.1')
         self.iv_step_entry.grid(row=2, column=1, padx=5, pady=2)
         
-        ctk.CTkLabel(params_grid, text='Time delay (s):', width=120).grid(row=3, column=0, padx=5, pady=2)
+        ctk.CTkLabel(params_grid, text='Step Duration (min):', width=120).grid(row=3, column=0, padx=5, pady=2)
         self.iv_time_entry = ctk.CTkEntry(params_grid, width=150)
         self.iv_time_entry.insert(0, '1.0')
         self.iv_time_entry.grid(row=3, column=1, padx=5, pady=2)
         
         ctk.CTkLabel(params_grid, text='Flow rate (ml/min):', width=120).grid(row=4, column=0, padx=5, pady=2)
         self.iv_flow_entry = ctk.CTkEntry(params_grid, width=150)
-        self.iv_flow_entry.insert(0, '0.2')
+        self.iv_flow_entry.insert(0, '1.5')
         self.iv_flow_entry.grid(row=4, column=1, padx=5, pady=2)
         ctk.CTkLabel(params_grid, text='(Max: 5.0)', width=80, font=('Helvetica', 9), text_color='gray').grid(row=4, column=2, padx=2, pady=2)
         
@@ -340,6 +224,139 @@ class IVTab(BaseTab):
         self.create_blue_button(export_menu_frame, text='PNG', command=self.iv_export_graph_png, width=100).pack(side='left', padx=2)
         self.create_blue_button(export_menu_frame, text='PDF', command=self.iv_export_graph_pdf, width=100).pack(side='left', padx=2)
         
+        # ------------------------------------------------------------------
+        # Bottom hardware blocks (moved here per requested order)
+        # 1) Keithley 2450 SMU Status
+        # 2) Vapourtec SF-10 Pump Status
+        # 3) Quick SMU Control
+        # 4) MCusb-1408FS-Plus DAQ Status
+        # 5) Temperature Monitor
+        # ------------------------------------------------------------------
+
+        # 1. SMU Connection Status
+        smu_status_frame = ctk.CTkFrame(left_frame)
+        smu_status_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(smu_status_frame, text="Keithley 2450 SMU Status", font=('Helvetica', 14, 'bold')).pack(pady=5)
+
+        smu_info_frame = ctk.CTkFrame(smu_status_frame)
+        smu_info_frame.pack(fill='x', padx=5, pady=5)
+
+        ctk.CTkLabel(smu_info_frame, text='Status:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+        self.smu_status_label = ctk.CTkLabel(smu_info_frame, text='Checking...', width=250, anchor='w')
+        self.smu_status_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
+
+        ctk.CTkLabel(smu_info_frame, text='Device ID:', width=100).grid(row=1, column=0, padx=5, pady=2, sticky='w')
+        self.smu_idn_label = ctk.CTkLabel(smu_info_frame, text='N/A', width=250, anchor='w', wraplength=250)
+        self.smu_idn_label.grid(row=1, column=1, padx=5, pady=2, sticky='w')
+
+        ctk.CTkLabel(smu_info_frame, text='Resource:', width=100).grid(row=2, column=0, padx=5, pady=2, sticky='w')
+        self.smu_resource_label = ctk.CTkLabel(smu_info_frame, text='N/A', width=250, anchor='w', wraplength=250)
+        self.smu_resource_label.grid(row=2, column=1, padx=5, pady=2, sticky='w')
+
+        smu_btn_frame = ctk.CTkFrame(smu_status_frame)
+        smu_btn_frame.pack(pady=5)
+        self.create_blue_button(smu_btn_frame, text='🔍 Detect SMU', command=self.detect_smu, width=120, height=30).pack(side='left', padx=2)
+        self.create_blue_button(smu_btn_frame, text='🔄 Refresh Status', command=self.refresh_smu_status, width=120, height=30).pack(side='left', padx=2)
+        self.create_blue_button(smu_btn_frame, text='📋 List Devices', command=self.list_visa_devices, width=120, height=30).pack(side='left', padx=2)
+
+        # 2. Pump status
+        pump_status_frame = ctk.CTkFrame(left_frame)
+        pump_status_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(pump_status_frame, text="Vapourtec SF-10 Pump Status",
+                     font=('Helvetica', 14, 'bold')).pack(pady=5)
+
+        pump_info_frame = ctk.CTkFrame(pump_status_frame)
+        pump_info_frame.pack(fill='x', padx=5, pady=5)
+
+        ctk.CTkLabel(pump_info_frame, text='Status:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+        self.iv_pump_status_label = ctk.CTkLabel(pump_info_frame, text='Checking...', width=250, anchor='w')
+        self.iv_pump_status_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
+
+        flow_quick_frame = ctk.CTkFrame(pump_status_frame)
+        flow_quick_frame.pack(fill='x', padx=5, pady=5)
+        ctk.CTkLabel(flow_quick_frame, text='Quick Flow Rate (ml/min):', width=150).pack(side='left', padx=5)
+        self.iv_flow_rate_entry = ctk.CTkEntry(flow_quick_frame, width=100)
+        self.iv_flow_rate_entry.insert(0, '1.5')
+        self.iv_flow_rate_entry.pack(side='left', padx=5)
+        self.iv_update_flow_btn = self.create_blue_button(flow_quick_frame, text='Update Flow',
+                                                          command=self.iv_update_flow, width=100)
+        self.iv_update_flow_btn.pack(side='left', padx=2)
+        # Bind sync events now that both entries exist
+        self.iv_flow_rate_entry.bind('<FocusOut>', self.iv_sync_flow_entries)
+        self.iv_flow_rate_entry.bind('<Return>', self.iv_sync_flow_entries)
+
+        pump_btn_frame = ctk.CTkFrame(pump_status_frame)
+        pump_btn_frame.pack(pady=5)
+        self.create_blue_button(pump_btn_frame, text='🔄 Refresh Status',
+                                command=self.iv_refresh_pump_status, width=120, height=30).pack(side='left', padx=2)
+        self.after(1500, self.iv_refresh_pump_status)
+
+        # 3. Quick SMU Control
+        smu_control_frame = ctk.CTkFrame(left_frame)
+        smu_control_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(smu_control_frame, text="Quick SMU Control", font=('Helvetica', 14, 'bold')).pack(pady=5)
+
+        smu_control_grid = ctk.CTkFrame(smu_control_frame)
+        smu_control_grid.pack(fill='x', padx=5, pady=5)
+
+        ctk.CTkLabel(smu_control_grid, text='Set Voltage (V):', width=120).grid(row=0, column=0, padx=5, pady=2)
+        self.smu_voltage_entry = ctk.CTkEntry(smu_control_grid, width=100)
+        self.smu_voltage_entry.insert(0, '0.0')
+        self.smu_voltage_entry.grid(row=0, column=1, padx=5, pady=2)
+
+        ctk.CTkLabel(smu_control_grid, text='Current Limit (A):', width=120).grid(row=1, column=0, padx=5, pady=2)
+        self.smu_current_limit_entry = ctk.CTkEntry(smu_control_grid, width=100)
+        self.smu_current_limit_entry.insert(0, '0.1')
+        self.smu_current_limit_entry.grid(row=1, column=1, padx=5, pady=2)
+
+        smu_control_btn_frame = ctk.CTkFrame(smu_control_frame)
+        smu_control_btn_frame.pack(pady=5)
+        self.create_blue_button(smu_control_btn_frame, text='Set Voltage', command=self.set_smu_voltage_manual, width=100, height=30).pack(side='left', padx=2)
+        self.create_blue_button(smu_control_btn_frame, text='Measure', command=self.measure_smu_manual, width=100, height=30).pack(side='left', padx=2)
+        self.create_blue_button(smu_control_btn_frame, text='Output OFF', command=self.smu_output_off, width=100, height=30,
+                                fg_color='#0D47A1', hover_color='#0C3A7A').pack(side='left', padx=2)
+
+        # 4. MCusb status
+        mcusb_status_frame = ctk.CTkFrame(left_frame)
+        mcusb_status_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(mcusb_status_frame, text="MCusb-1408FS-Plus DAQ Status", font=('Helvetica', 14, 'bold')).pack(pady=5)
+
+        mcusb_info_frame = ctk.CTkFrame(mcusb_status_frame)
+        mcusb_info_frame.pack(fill='x', padx=5, pady=5)
+
+        ctk.CTkLabel(mcusb_info_frame, text='Status:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+        self.mcusb_status_label = ctk.CTkLabel(mcusb_info_frame, text='Checking...', width=250, anchor='w')
+        self.mcusb_status_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
+
+        ctk.CTkLabel(mcusb_info_frame, text='Device:', width=100).grid(row=1, column=0, padx=5, pady=2, sticky='w')
+        self.mcusb_device_label = ctk.CTkLabel(mcusb_info_frame, text='N/A', width=250, anchor='w')
+        self.mcusb_device_label.grid(row=1, column=1, padx=5, pady=2, sticky='w')
+
+        ctk.CTkLabel(mcusb_info_frame, text='Channel 0 (IN HI):', width=100).grid(row=2, column=0, padx=5, pady=2, sticky='w')
+        self.mcusb_ch0_label = ctk.CTkLabel(mcusb_info_frame, text='N/A', width=250, anchor='w')
+        self.mcusb_ch0_label.grid(row=2, column=1, padx=5, pady=2, sticky='w')
+
+        mcusb_btn_frame = ctk.CTkFrame(mcusb_status_frame)
+        mcusb_btn_frame.pack(pady=5)
+        self.create_blue_button(mcusb_btn_frame, text='🔄 Refresh', command=self.refresh_mcusb_status, width=120, height=30).pack(side='left', padx=2)
+        self.create_blue_button(mcusb_btn_frame, text='📊 Read Channels', command=self.read_mcusb_channels, width=120, height=30).pack(side='left', padx=2)
+
+        # 5. Temperature monitor
+        temp_monitor_frame = ctk.CTkFrame(left_frame)
+        temp_monitor_frame.pack(fill='x', pady=5)
+        ctk.CTkLabel(temp_monitor_frame, text="Temperature Monitor", font=('Helvetica', 14, 'bold')).pack(pady=5)
+
+        temp_info_frame = ctk.CTkFrame(temp_monitor_frame)
+        temp_info_frame.pack(fill='x', padx=5, pady=5)
+
+        ctk.CTkLabel(temp_info_frame, text='Temperature:', width=100).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+        self.temp_display_label = ctk.CTkLabel(temp_info_frame, text='N/A', width=250, anchor='w', font=('Helvetica', 12, 'bold'))
+        self.temp_display_label.grid(row=0, column=1, padx=5, pady=2, sticky='w')
+
+        ctk.CTkLabel(temp_info_frame, text='Voltage (V):', width=100).grid(row=1, column=0, padx=5, pady=2, sticky='w')
+        self.temp_voltage_label = ctk.CTkLabel(temp_info_frame, text='N/A', width=250, anchor='w')
+        self.temp_voltage_label.grid(row=1, column=1, padx=5, pady=2, sticky='w')
+
         # Status bar
         self.iv_status_bar = ctk.CTkLabel(left_frame, text='', font=('Helvetica', 10))
         self.iv_status_bar.pack(pady=5)
@@ -355,6 +372,18 @@ class IVTab(BaseTab):
         graph_control_frame = ctk.CTkFrame(right_frame)
         graph_control_frame.pack(fill='x', pady=5)
         ctk.CTkLabel(graph_control_frame, text="I-V Characteristic", font=('Helvetica', 14, 'bold')).pack(pady=5)
+
+        auto_scale_frame = ctk.CTkFrame(graph_control_frame)
+        auto_scale_frame.pack(fill='x', padx=5, pady=2)
+        ctk.CTkLabel(auto_scale_frame, text='Zoom Control:', width=80).pack(side='left', padx=5)
+        self.iv_auto_scale_btn = self.create_blue_button(
+            auto_scale_frame,
+            text='🔓 Auto-Scale ON',
+            command=self.toggle_iv_auto_scale,
+            width=150,
+            height=30
+        )
+        self.iv_auto_scale_btn.pack(side='left', padx=2)
         
         # Axis selection controls
         axis_frame = ctk.CTkFrame(graph_control_frame)
@@ -867,6 +896,36 @@ class IVTab(BaseTab):
             self.refresh_smu_status()
         except Exception as e:
             messagebox.showerror('Error', f'Error turning off output: {e}')
+
+    def on_iv_output_toggle(self):
+        """Enable/disable SMU output from IV tab top switch."""
+        enabled = self.iv_output_var.get()
+        self.iv_output_enabled = enabled
+
+        if not enabled:
+            try:
+                if self.hw_controller.smu is not None and hasattr(self.hw_controller, 'smu'):
+                    self.hw_controller.stop_smu()
+                if self.update_queue:
+                    self.update_queue.put(('UPDATE_IV_STATUS_BAR', 'SMU output turned OFF'))
+            except Exception as e:
+                messagebox.showerror('Error', f'Error turning off SMU output: {e}')
+            return
+
+        try:
+            if self.hw_controller.smu is None or not hasattr(self.hw_controller, 'smu'):
+                raise RuntimeError("SMU not connected.")
+
+            voltage = float(self.smu_voltage_entry.get()) if hasattr(self, 'smu_voltage_entry') else 0.0
+            current_limit = float(self.smu_current_limit_entry.get()) if hasattr(self, 'smu_current_limit_entry') else 0.1
+            self.hw_controller.setup_smu_for_iv_measurement(current_limit)
+            self.hw_controller.set_smu_voltage(voltage, current_limit)
+            if self.update_queue:
+                self.update_queue.put(('UPDATE_IV_STATUS_BAR', f'SMU output enabled: {voltage:.3f} V'))
+        except Exception as e:
+            self.iv_output_var.set(False)
+            self.iv_output_enabled = False
+            messagebox.showerror('Error', f'Error enabling SMU output: {e}')
     
     # --- Pump Control Functions ---
     def iv_refresh_pump_status(self):
@@ -968,8 +1027,8 @@ class IVTab(BaseTab):
             start_val = float(self.iv_start_entry.get()) if self.iv_start_entry.get() else -2.0
             stop_val = float(self.iv_stop_entry.get()) if self.iv_stop_entry.get() else 2.0
             step_val = float(self.iv_step_entry.get()) if self.iv_step_entry.get() else 0.1
-            time_val = float(self.iv_time_entry.get()) if self.iv_time_entry.get() else 1.0
-            flow_rate = float(self.iv_flow_entry.get()) if self.iv_flow_entry.get() else 0.2
+            dwell_time_min = float(self.iv_time_entry.get()) if self.iv_time_entry.get() else 1.0
+            flow_rate = float(self.iv_flow_entry.get()) if self.iv_flow_entry.get() else 1.5
             
             # Enforce maximum flow rate of 5.0 ml/min
             MAX_FLOW_RATE = 5.0
@@ -983,6 +1042,15 @@ class IVTab(BaseTab):
             if flow_rate < 0:
                 messagebox.showerror('Error', 'Flow rate cannot be negative.')
                 return
+            if dwell_time_min <= 0:
+                messagebox.showerror('Error', 'Step duration must be greater than 0 minutes.')
+                return
+            try:
+                # Centralized sweep validation: non-zero step and correct direction.
+                self._build_voltage_points(start_val, stop_val, step_val)
+            except ValueError as validation_error:
+                messagebox.showerror('Error', str(validation_error))
+                return
             
             self.hw_controller.setup_smu_iv_sweep(start_val, stop_val, step_val)
             self.hw_controller.set_pump_flow_rate(flow_rate)
@@ -990,7 +1058,10 @@ class IVTab(BaseTab):
             self.hw_controller.set_valves(valve_main, not valve_main)
             
             if self.update_queue:
-                self.update_queue.put(('UPDATE_IV_STATUS_BAR', f"I-V setup completed: Start={start_val}V, Stop={stop_val}V, Step={step_val}V, Flow={flow_rate}ml/min"))
+                self.update_queue.put((
+                    'UPDATE_IV_STATUS_BAR',
+                    f"I-V setup completed: Start={start_val}V, Stop={stop_val}V, Step={step_val}V, Dwell={dwell_time_min} min, Flow={flow_rate} ml/min"
+                ))
         except ValueError:
             messagebox.showerror('Error', "Invalid input values. Please enter numbers.")
     
@@ -1000,6 +1071,17 @@ class IVTab(BaseTab):
             start_val = float(self.iv_start_entry.get()) if self.iv_start_entry.get() else -2.0
             stop_val = float(self.iv_stop_entry.get()) if self.iv_stop_entry.get() else 2.0
             step_val = float(self.iv_step_entry.get()) if self.iv_step_entry.get() else 0.1
+            dwell_time_min = float(self.iv_time_entry.get()) if self.iv_time_entry.get() else 1.0
+            
+            if dwell_time_min <= 0:
+                messagebox.showerror('Error', 'Step duration must be greater than 0 minutes.')
+                return
+            try:
+                # Validate sweep before launching measurement thread.
+                self._build_voltage_points(start_val, stop_val, step_val)
+            except ValueError as validation_error:
+                messagebox.showerror('Error', str(validation_error))
+                return
             
             # Reset stop flag and enable stop button
             self.iv_measurement_stop = False
@@ -1007,7 +1089,7 @@ class IVTab(BaseTab):
                 self.iv_stop_button.configure(state='normal')
             
             threading.Thread(target=self.run_iv_measurement,
-                           args=(start_val, stop_val, step_val),
+                           args=(start_val, stop_val, step_val, dwell_time_min),
                            daemon=True).start()
         except ValueError:
             messagebox.showerror('Error', "Invalid input values. Please enter numbers.")
@@ -1055,11 +1137,72 @@ class IVTab(BaseTab):
                 return None, None
         else:
             return None, None
+
+    def _extract_current_value(self, measurement):
+        """Extract current value from different SMU response key variants."""
+        if not isinstance(measurement, dict):
+            return None
+        for key in ('current', 'measured_current', 'i', 'current_A'):
+            if key in measurement and measurement.get(key) is not None:
+                try:
+                    return float(measurement.get(key))
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    def _read_iv_current_only(self):
+        """Read only measured current (READ?) from SMU in IV mode."""
+        try:
+            if self.hw_controller.smu is None or not hasattr(self.hw_controller, 'smu'):
+                return None
+            if not hasattr(self.hw_controller.smu, 'smu') or self.hw_controller.smu.smu is None:
+                return None
+            if not hasattr(self.hw_controller.smu, 'scpi'):
+                return None
+
+            read_cmd = self.hw_controller.smu.scpi.read_data()
+            read_value = self.hw_controller.smu.smu.query(read_cmd).strip()
+            return float(read_value)
+        except Exception as e:
+            print(f"Error reading IV current (READ?): {e}")
+            return None
     
-    def run_iv_measurement(self, start_val, stop_val, step_val):
-        """Run I-V measurement in separate thread"""
+    def _build_voltage_points(self, start_val, stop_val, step_val):
+        """Build safe voltage list with direction/step validation."""
+        if start_val == stop_val:
+            return [start_val]
+        if step_val == 0:
+            raise ValueError("Step must not be zero when start and stop differ.")
+        if start_val < stop_val and step_val < 0:
+            raise ValueError("Step must be positive for ascending sweep.")
+        if start_val > stop_val and step_val > 0:
+            raise ValueError("Step must be negative for descending sweep.")
+        
+        points = []
+        v = start_val
+        epsilon = abs(step_val) * 1e-9 + 1e-12
+        max_points = 100000
+        
+        if step_val > 0:
+            while v <= stop_val + epsilon and len(points) < max_points:
+                points.append(v)
+                v += step_val
+        else:
+            while v >= stop_val - epsilon and len(points) < max_points:
+                points.append(v)
+                v += step_val
+        
+        if len(points) >= max_points:
+            raise ValueError("Too many voltage points. Check step/start/stop values.")
+        return points
+
+    def run_iv_measurement(self, start_val, stop_val, step_val, dwell_time_min):
+        """Run time-based I-V measurement with fixed pump flow and 0.5s current sampling."""
         # Reset stop flag
         self.iv_measurement_stop = False
+        sample_interval_s = 0.5
+        settling_time_s = 0.5
+        dwell_seconds = dwell_time_min * 60.0
         
         if self.update_queue:
             self.update_queue.put(('UPDATE_IV_STATUS', ('Measuring...', 'orange')))
@@ -1082,14 +1225,14 @@ class IVTab(BaseTab):
         
         # Get flow rate from entry
         try:
-            flow_rate = float(self.iv_flow_entry.get()) if hasattr(self, 'iv_flow_entry') and self.iv_flow_entry.get() else 0.2
+            flow_rate = float(self.iv_flow_entry.get()) if hasattr(self, 'iv_flow_entry') and self.iv_flow_entry.get() else 1.5
             MAX_FLOW_RATE = 5.0
             if flow_rate > MAX_FLOW_RATE:
                 flow_rate = MAX_FLOW_RATE
             if flow_rate < 0:
-                flow_rate = 0.2
+                flow_rate = 1.5
         except:
-            flow_rate = 0.2
+            flow_rate = 1.5
         
         # Start pump automatically before measurement
         try:
@@ -1130,19 +1273,7 @@ class IVTab(BaseTab):
             except:
                 current_limit = 0.1
             
-            # Generate voltage points
-            if start_val < stop_val:
-                voltage_points = []
-                v = start_val
-                while v <= stop_val:
-                    voltage_points.append(v)
-                    v += step_val
-            else:
-                voltage_points = []
-                v = start_val
-                while v >= stop_val:
-                    voltage_points.append(v)
-                    v -= step_val
+            voltage_points = self._build_voltage_points(start_val, stop_val, step_val)
             
             total_points = len(voltage_points)
             
@@ -1164,8 +1295,10 @@ class IVTab(BaseTab):
                     self.update_queue.put(('UPDATE_IV_STATUS_BAR', "SMU not connected"))
                 return
             
-            # Perform I-V sweep
-            for voltage in voltage_points:
+            # Perform time-based step sweep:
+            # each voltage is held for dwell_seconds; current sampled every 0.5 s.
+            # Voltage is taken from software setpoint; current is measured continuously.
+            for step_index, voltage in enumerate(voltage_points, start=1):
                 # Check if measurement should be stopped
                 if self.iv_measurement_stop:
                     print("Measurement stopped by user")
@@ -1182,37 +1315,9 @@ class IVTab(BaseTab):
                 if self.hw_controller.smu is not None and hasattr(self.hw_controller, 'smu'):
                     try:
                         self.hw_controller.set_smu_voltage(voltage, current_limit)
-                        try:
-                            delay = float(self.iv_time_entry.get()) if hasattr(self, 'iv_time_entry') else 0.1
-                        except:
-                            delay = 0.1
-                        time.sleep(delay)
-                        
-                        # Read voltage from MCusb channel 0 (IN HI)
-                        # Try differential first (if IN HI and IN LO are on CH0), then fall back to single-ended
-                        # This gives us the actual voltage being applied, measured independently
-                        if self.hw_controller.ni_daq and self.hw_controller.ni_daq.is_connected():
-                            try:
-                                # Try differential first (IN HI - IN LO on CH0)
-                                mcusb_voltage = self.hw_controller.ni_daq.read_analog_input('ai0', differential=True)
-                                if mcusb_voltage is None:
-                                    # Fall back to single-ended if differential fails
-                                    mcusb_voltage = self.hw_controller.ni_daq.read_analog_input('ai0', differential=False)
-                                
-                                if mcusb_voltage is not None:
-                                    # Update display in real-time via queue
-                                    if self.update_queue:
-                                        self.update_queue.put(('UPDATE_MCUSB_CH0', mcusb_voltage))
-                                    print(f"MCusb CH0 (IN HI) reading: {mcusb_voltage:.4f}V (SMU set: {voltage}V)")
-                            except Exception as e:
-                                print(f"Error reading MCusb during sweep: {e}")
-                        
-                        measurement = self.hw_controller.measure_smu()
-                        if measurement:
-                            current = measurement['current']
-                        else:
-                            print(f"Warning: Failed to measure at {voltage}V")
-                            continue
+                        # No settling delay on first step; only between voltage transitions
+                        if step_index > 1:
+                            time.sleep(settling_time_s)
                     except Exception as e:
                         print(f"Error in I-V measurement at {voltage}V: {e}")
                         continue
@@ -1221,21 +1326,71 @@ class IVTab(BaseTab):
                         self.update_queue.put(('UPDATE_IV_STATUS', ('Error', 'red')))
                         self.update_queue.put(('UPDATE_IV_STATUS_BAR', "SMU not connected"))
                     return
+                step_start_time = time.time()
+                while (time.time() - step_start_time) < dwell_seconds and not self.iv_measurement_stop:
+                    # IV mode policy:
+                    # - Voltage comes from the programmed setpoint.
+                    # - Only current is read from SMU (READ? with SENS:FUNC CURR).
+                    current = self._read_iv_current_only()
+                    if current is None:
+                        time.sleep(sample_interval_s)
+                        continue
+                    
+                    elapsed_time_s = time.time() - self.iv_measurement_start_time
+                    elapsed_time_min = elapsed_time_s / 60.0
+                    
+                    # Update graph arrays
+                    self.iv_x_data.append(voltage)
+                    self.iv_y_data.append(current)
+                    self.iv_time_x_data.append(elapsed_time_min)
+                    self.iv_time_v_data.append(voltage)
+                    self.iv_time_i_data.append(current)
+                    
+                    pump_flow_read = flow_rate
+                    try:
+                        pump_data = self.hw_controller.read_pump_data()
+                        if isinstance(pump_data, dict):
+                            pump_flow_read = pump_data.get('flow', flow_rate)
+                    except Exception:
+                        pass
+                    
+                    # Save data point using DataHandler schema
+                    data_point = {
+                        "time": elapsed_time_s,
+                        "flow_setpoint": flow_rate,
+                        "pump_flow_read": pump_flow_read,
+                        "pressure_read": "",
+                        "temp_read": "",
+                        "level_read": "",
+                        "program_step": step_index,
+                        "voltage": voltage,
+                        "current": current,
+                        "target_voltage": voltage
+                    }
+                    self.data_handler.append_data(data_point)
+                    
+                    if self.update_queue:
+                        self.update_queue.put(('UPDATE_IV_GRAPH', (list(self.iv_x_data), list(self.iv_y_data))))
+                        self.update_queue.put((
+                            'UPDATE_IV_STATUS_BAR',
+                            f"Step {step_index}/{total_points}: V={voltage:.3f}V, t={elapsed_time_min:.2f} min"
+                        ))
+                    self.after(
+                        0,
+                        lambda v=voltage, i=current: (
+                            self.iv_voltage_label.configure(text=self.format_value_with_unit(v, 'voltage')),
+                            self.iv_current_label.configure(text=self.format_value_with_unit(i, 'current')),
+                            self.iv_resistance_label.configure(
+                                text=self.format_value_with_unit(v / i, 'resistance') if abs(i) > 1e-12 else '∞'
+                            )
+                        )
+                    )
+                    
+                    time.sleep(sample_interval_s)
                 
-                # Update graph
-                self.iv_x_data.append(voltage)
-                self.iv_y_data.append(current)
-                
-                # Save time-dependent data
-                elapsed_time = time.time() - self.iv_measurement_start_time
-                self.iv_time_x_data.append(elapsed_time)
-                self.iv_time_v_data.append(voltage)
-                self.iv_time_i_data.append(current)
-                
-                # Check stop flag again before continuing (in case it was set during measurement)
+                # Check stop flag between steps
                 if self.iv_measurement_stop:
                     print("Measurement stopped by user")
-                    # Stop pump when measurement is stopped
                     try:
                         self.hw_controller.stop_pump()
                     except Exception as e:
@@ -1243,25 +1398,10 @@ class IVTab(BaseTab):
                     if self.update_queue:
                         self.update_queue.put(('UPDATE_IV_STATUS', ('Stopped', 'orange')))
                         self.update_queue.put(('UPDATE_IV_STATUS_BAR', "Measurement stopped by user"))
-                    # BUG FIX #2: Lambda closure - capture button reference correctly
                     if hasattr(self, 'iv_stop_button'):
                         btn = self.iv_stop_button
                         self.after(0, lambda b=btn: b.configure(state='disabled'))
                     break
-                
-                if self.update_queue:
-                    self.update_queue.put(('UPDATE_IV_GRAPH', (list(self.iv_x_data), list(self.iv_y_data))))
-                    progress = len(self.iv_x_data)
-                    self.update_queue.put(('UPDATE_IV_STATUS_BAR', f"Measuring: {progress}/{total_points} points..."))
-                
-                # Save data point
-                data_point = {
-                    "time": len(self.iv_x_data),
-                    "voltage": voltage,
-                    "current": current,
-                    "elapsed_time": elapsed_time
-                }
-                self.data_handler.append_data(data_point)
             
             if self.update_queue:
                 self.update_queue.put(('UPDATE_IV_STATUS', ('Completed', 'green')))
@@ -1305,6 +1445,12 @@ class IVTab(BaseTab):
     
     def plot_iv_xy_graph(self, x_axis_type, y_axis_type):
         """Plot IV graph with selected axes and automatic unit scaling"""
+        saved_xlim = None
+        saved_ylim = None
+        if not self.iv_auto_scale_enabled:
+            saved_xlim = self.iv_ax.get_xlim()
+            saved_ylim = self.iv_ax.get_ylim()
+
         self.iv_ax.clear()
         
         if x_axis_type == 'Time' and y_axis_type == 'Voltage':
@@ -1315,7 +1461,7 @@ class IVTab(BaseTab):
             title = "Voltage vs Time"
             y_unit, y_scale = self.get_axis_unit_label(y_data, 'voltage')
             ylabel = f"{ylabel_base} ({y_unit})"
-            xlabel = f"{xlabel_base} (s)"
+            xlabel = f"{xlabel_base} (min)"
             y_data_scaled = [y * y_scale for y in y_data] if y_data else []
             x_data_scaled = x_data
         elif x_axis_type == 'Time' and y_axis_type == 'Current':
@@ -1326,7 +1472,7 @@ class IVTab(BaseTab):
             title = "Current vs Time"
             y_unit, y_scale = self.get_axis_unit_label(y_data, 'current')
             ylabel = f"{ylabel_base} ({y_unit})"
-            xlabel = f"{xlabel_base} (s)"
+            xlabel = f"{xlabel_base} (min)"
             y_data_scaled = [y * y_scale for y in y_data] if y_data else []
             x_data_scaled = x_data
         elif x_axis_type == 'Voltage' and y_axis_type == 'Current':
@@ -1388,13 +1534,34 @@ class IVTab(BaseTab):
         
         # Set axis limits
         if len(x_data_scaled) > 0 and len(y_data_scaled) > 0:
-            x_margin = (max(x_data_scaled) - min(x_data_scaled)) * 0.05 if max(x_data_scaled) > min(x_data_scaled) else 1
-            y_margin = (max(y_data_scaled) - min(y_data_scaled)) * 0.1 if max(y_data_scaled) > min(y_data_scaled) else 1
-            self.iv_ax.set_xlim(min(x_data_scaled) - x_margin, max(x_data_scaled) + x_margin)
-            self.iv_ax.set_ylim(min(y_data_scaled) - y_margin, max(y_data_scaled) + y_margin)
+            if self.iv_auto_scale_enabled:
+                x_margin = (max(x_data_scaled) - min(x_data_scaled)) * 0.05 if max(x_data_scaled) > min(x_data_scaled) else 1
+                y_margin = (max(y_data_scaled) - min(y_data_scaled)) * 0.1 if max(y_data_scaled) > min(y_data_scaled) else 1
+                self.iv_ax.set_xlim(min(x_data_scaled) - x_margin, max(x_data_scaled) + x_margin)
+                self.iv_ax.set_ylim(min(y_data_scaled) - y_margin, max(y_data_scaled) + y_margin)
+            elif saved_xlim is not None and saved_ylim is not None:
+                self.iv_ax.set_xlim(saved_xlim)
+                self.iv_ax.set_ylim(saved_ylim)
         
         self.iv_fig.tight_layout(pad=2.0)
         self.iv_canvas.draw()
+
+    def toggle_iv_auto_scale(self):
+        """Toggle auto-scale on/off for IV graph."""
+        self.iv_auto_scale_enabled = not self.iv_auto_scale_enabled
+        if self.iv_auto_scale_enabled:
+            self.iv_auto_scale_btn.configure(
+                text='🔓 Auto-Scale ON',
+                fg_color='#1E88E5',
+                hover_color='#1565C0'
+            )
+        else:
+            self.iv_auto_scale_btn.configure(
+                text='🔒 Auto-Scale OFF',
+                fg_color='#616161',
+                hover_color='#424242'
+            )
+        self.on_iv_axis_change()
     
     def update_iv_graph(self, x_data, y_data):
         """Update IV graph - now uses axis selection"""
@@ -1402,6 +1569,22 @@ class IVTab(BaseTab):
             self.iv_x_data = list(x_data)
             self.iv_y_data = list(y_data)
         
+        x_axis_type = self.iv_x_axis_combo.get()
+        y_axis_type = self.iv_y_axis_combo.get()
+        self.plot_iv_xy_graph(x_axis_type, y_axis_type)
+
+    def update_iv_time_graph(self, time_data, voltage_data, current_data):
+        """Update IV time-series buffers and replot with selected axes."""
+        if time_data is not None:
+            self.iv_time_x_data = list(time_data)
+        if voltage_data is not None:
+            self.iv_time_v_data = list(voltage_data)
+            # Keep IV characteristic arrays synced for non-time axes as well.
+            self.iv_x_data = list(voltage_data)
+        if current_data is not None:
+            self.iv_time_i_data = list(current_data)
+            self.iv_y_data = list(current_data)
+
         x_axis_type = self.iv_x_axis_combo.get()
         y_axis_type = self.iv_y_axis_combo.get()
         self.plot_iv_xy_graph(x_axis_type, y_axis_type)
